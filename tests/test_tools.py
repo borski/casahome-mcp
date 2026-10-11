@@ -21,6 +21,10 @@ from casahome.models.mailbox import (
     PackagesResponse,
 )
 from casahome.models.requests import RequestDetails, RequestsResponse
+from coverage_cases import COVERAGE_CASES
+from coverage_fakes import CoverageFake
+from detail_cases import DETAIL_CASES
+from detail_fakes import DetailFake
 from mcp import Client
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, TextContent
@@ -34,6 +38,7 @@ from casahome_mcp.server import create_server
 from casahome_mcp.tools import read
 
 HOME = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+ENTITY = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 SECOND_HOME = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 FORBIDDEN_HOME = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 SECRET = "synthetic-secret-never-output"
@@ -79,16 +84,32 @@ class RemoteCase:
     method: str
     arguments: dict[str, object] = field(default_factory=dict)
     tail: tuple[object, ...] = ()
+    # Still marked unverified in python-casahome, so behind the operator gate.
+    gated: bool = False
+    home_scoped: bool = True
+
+    def sdk_arguments(self, home: str) -> tuple[object, ...]:
+        return (home, *self.tail) if self.home_scoped else self.tail
+
+    @property
+    def confidence(self) -> str:
+        return "UNVERIFIED" if self.gated else "VERIFIED"
 
 
 # Independent expected manifest, not generated from the production registration.
+# Gating mirrors the SDK evidence markers: request_details is unverified.
 REMOTE_CASES = (
     RemoteCase("casa_get_badge_counts", "badge_counts"),
     RemoteCase("casa_get_weather", "weather"),
     RemoteCase("casa_list_inventory", "home_details", {"kind": "rooms", "limit": 1}),
+    RemoteCase("casa_get_inventory_item", "home_details", {"entity_id": ENTITY}),
     RemoteCase("casa_list_requests", "requests_tab", {"lane": "todos", "limit": 1}),
     RemoteCase(
-        "casa_get_request", "request_details", {"request_id": "request_one-1"}, ("request_one-1",)
+        "casa_get_request",
+        "request_details",
+        {"request_id": "request_one-1"},
+        ("request_one-1",),
+        gated=True,
     ),
     RemoteCase(
         "casa_list_calendar",
@@ -100,15 +121,25 @@ REMOTE_CASES = (
     RemoteCase("casa_get_mailbox", "mailbox"),
     RemoteCase("casa_list_mail_items", "mail_items", {"offset": 0, "limit": 1}),
     RemoteCase("casa_list_packages", "packages", {"offset": 0, "limit": 1}),
+    *(
+        RemoteCase(name, method, arguments, tail)
+        for name, method, arguments, tail in COVERAGE_CASES
+    ),
+    *(
+        RemoteCase(name, method, arguments, tail, gated, scoped)
+        for name, method, arguments, tail, gated, scoped in DETAIL_CASES
+    ),
 )
+GATED_CASES = tuple(case for case in REMOTE_CASES if case.gated)
+VERIFIED_CASES = tuple(case for case in REMOTE_CASES if not case.gated)
 TOOL_NAMES = frozenset(case.name for case in REMOTE_CASES) | {
     "casa_get_status",
     "casa_list_homes",
 }
 
 
-class FakeCasa(CasaReads):
-    """Exactly ten explicit reads, checked against the real CasaReads Protocol."""
+class FakeCasa(CoverageFake, DetailFake, CasaReads):
+    """Concrete explicit reads, checked against the full CasaReads Protocol."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[object, ...]]] = []
@@ -118,6 +149,8 @@ class FakeCasa(CasaReads):
         self.active = 0
         self.maximum_active = 0
         self.cancelled = 0
+        self.init_coverage()
+        self.init_details()
         self.badges = HomeBadgeCounts.model_validate(
             {"computed_at": 1, "total": 2, "features": {"future/Feature": 2}, "token": SECRET}
         )
@@ -149,13 +182,13 @@ class FakeCasa(CasaReads):
                 },
                 "entities": [
                     {
-                        "id": "entity-one",
+                        "id": ENTITY,
                         "category_id": "category-one",
                         "category": "Synthetic appliance",
                         "status": "future-status",
                         "rooms": ["room-one"],
                         "stories": ["story-one"],
-                        "make": {"password": SECRET},
+                        "make": {"id": "make-one", "name": "Synthetic make", "password": SECRET},
                         "manuals": [{"signed_url": SECRET}],
                     }
                 ],
@@ -479,12 +512,12 @@ async def test_every_remote_wrapper_invokes_only_its_expected_method(
         payload = success(result)
         assert set(payload) == {"source", "confidence", "home_id", "fetched_at", "warnings", "data"}
         assert payload["source"] == "casa"
-        assert payload["confidence"] == "UNVERIFIED"
+        assert payload["confidence"] == case.confidence
         assert payload["home_id"] == selected
         fetched = payload["fetched_at"]
         assert isinstance(fetched, str)
         assert datetime.fromisoformat(fetched).utcoffset() == UTC.utcoffset(None)
-        assert harness.fake.calls == [(case.method, (selected, *case.tail))]
+        assert harness.fake.calls == [(case.method, case.sdk_arguments(selected))]
         data = mapping(payload["data"])
         if "page" in data:
             page = mapping(data["page"])
@@ -760,7 +793,7 @@ async def test_concurrency_is_limited_to_two_without_retry(attempt: int) -> None
         assert harness.fake.active == harness.fake.maximum_active == 2
         harness.fake.release.set()
         results = await asyncio.gather(*tasks)
-        assert all(result.confidence == "UNVERIFIED" for result in results)
+        assert all(result.confidence == "VERIFIED" for result in results)
         assert len(harness.fake.calls) == 5
         assert harness.fake.maximum_active == 2
         assert harness.fake.active == 0

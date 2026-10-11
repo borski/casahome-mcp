@@ -1,0 +1,28 @@
+"""Static routing manifest. Evidence still comes from the SDK method marker."""
+
+COVERAGE_METHODS = {
+    "casa_list_suggested_todos": "suggested_todos",
+    "casa_get_todo": "todo_details",
+    "casa_list_completed_requests": "completed_requests",
+    "casa_list_autopilot_plans": "autopilot_plans",
+    "casa_get_inventory_service_history": "inventory_service_history",
+    "casa_list_documents": "documents",
+    "casa_list_document_types": "document_types",
+    "casa_get_work_document_source": "work_document_source",
+    "casa_search_paint": "paint_search",
+    "casa_list_paint_brands": "paint_brands",
+    "casa_list_paint_collections": "paint_collections",
+    "casa_list_paint_colors": "paint_colors",
+    "casa_get_schedule_preferences": "schedule_preferences",
+    "casa_get_notification_settings": "notification_settings",
+    "casa_get_ai_bootstrap": "casa_ai_bootstrap",
+    "casa_list_ai_history": "casa_ai_messages",
+    "casa_list_vehicles": "vehicles",
+    "casa_get_utilities_insights": "utilities_insights",
+    "casa_get_property_taxes": "property_taxes",
+    "casa_list_purchases": "purchases",
+    "casa_list_onboarding_availability": "onboarding_availability",
+    "casa_list_onboarding_calendar": "onboarding_details_typed",
+    "casa_get_room_photo_metadata": "room_image_options",
+    "casa_list_photo_metadata": "matterport_images",
+}

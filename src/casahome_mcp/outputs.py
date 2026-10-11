@@ -90,6 +90,14 @@ class RoomSummary(OutputModel):
     floor_number: int
 
 
+class EntityPropertySummary(OutputModel):
+    """One non-null entity property, value rendered as bounded text."""
+
+    key: str = Field(max_length=256)
+    title: str = Field(max_length=256)
+    value: str = Field(max_length=256)
+
+
 class EntitySummary(OutputModel):
     id: str
     category_id: str
@@ -99,11 +107,21 @@ class EntitySummary(OutputModel):
     type: str | None
     rooms: list[str]
     stories: list[str]
+    make: str | None = Field(max_length=256)
+    model: str | None = Field(max_length=256)
+    serial_number: str | None = Field(max_length=256)
+    identity_state: str | None = Field(max_length=256)
+    properties: list[EntityPropertySummary] = Field(max_length=20)
+    model_summary: str | None = Field(max_length=2000)
 
 
 class InventoryData(OutputModel):
     kind: InventoryKind
     page: Page[EntitySummary | RoomSummary]
+
+
+class InventoryItemData(OutputModel):
+    entity: EntitySummary
 
 
 class RequestCardSummary(OutputModel):

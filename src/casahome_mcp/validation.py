@@ -4,8 +4,10 @@ Uses the documented MCP v2 middleware API, without changing protocol handlers.
 This API is provisional. The locked SDK version and protocol tests are essential.
 """
 
+import json
 from copy import deepcopy
 from typing import Any
+from unicodedata import category
 from uuid import UUID
 
 from jsonschema import Draft202012Validator
@@ -30,29 +32,72 @@ def input_guard(server: MCPServer) -> ServerMiddleware[Any]:
         arguments = params.get("arguments", {})
         # Python JSON Schema regexes accept a trailing newline at '$', while
         # Pydantic's Rust regex engine rejects it and echoes the rejected value.
-        # All exposed string inputs are identifiers/dates, never multiline text.
+        # All exposed string inputs are identifiers/dates/filters, never multiline text.
         if isinstance(arguments, dict) and any(
-            isinstance(value, str) and any(ord(char) < 32 or ord(char) == 127 for char in value)
+            isinstance(value, str) and any(category(char) in {"Cc", "Cf"} for char in value)
             for value in arguments.values()
         ):
             return refusal()
         if isinstance(arguments, dict):
             # JSON Schema accepts 1.0 as an integer, strict Pydantic doesn't.
-            for key in ("offset", "limit"):
-                if key in arguments and type(arguments[key]) is not int:
+            for key in ("offset", "limit", "page", "page_size", "upstream_limit"):
+                if (
+                    key in arguments
+                    and arguments[key] is not None
+                    and type(arguments[key]) is not int
+                ):
+                    return refusal()
+            for key in ("brand_id", "collection_id"):
+                if key in arguments and type(arguments[key]) not in (str, int):
+                    return refusal()
+            for key in ("cursor", "before"):
+                value = arguments.get(key)
+                if isinstance(value, str) and value.lower().startswith(("//", "../", "www.")):
                     return refusal()
             # MCP pre-parses JSON strings for union-typed arguments. Constrain
-            # home_id to a canonical dashed UUID before that preprocessing can
+            # UUIDs to canonical dashed strings before that preprocessing can
             # turn an object/string/number into an invalid union input.
-            home = arguments.get("home_id")
-            if home is not None:
-                if not isinstance(home, str):
-                    return refusal()
-                try:
-                    if home.lower() != str(UUID(home)):
+            for key in ("home_id", "entity_id", "room_id", "target_id"):
+                value = arguments.get(key)
+                if value is not None:
+                    if not isinstance(value, str):
                         return refusal()
-                except ValueError:
-                    return refusal()
+                    try:
+                        if value.lower() != str(UUID(value)):
+                            return refusal()
+                    except ValueError:
+                        return refusal()
+            # Nullable exact filters must not be reinterpreted as JSON objects,
+            # arrays or null by MCP's union preprocessing. Refuse ambiguous input.
+            for key in (
+                "room",
+                "category",
+                "q",
+                "search",
+                "document_type",
+                "cursor",
+                "before",
+                "todo_id",
+                "task_id",
+                "request_id",
+                "brand_id",
+                "collection_id",
+                "document_id",
+                "availability_request_id",
+                "visit_id",
+                "include_current_vendor_visit_id",
+                "plan_id",
+                "enum_type",
+                "app_id",
+            ):
+                value = arguments.get(key)
+                if isinstance(value, str):
+                    try:
+                        parsed = json.loads(value)
+                    except (ValueError, RecursionError):
+                        continue
+                    if parsed is None or isinstance(parsed, dict | list):
+                        return refusal()
         if not Draft202012Validator(schema).is_valid(arguments):
             return refusal()
         return await call_next(ctx)

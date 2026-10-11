@@ -1,0 +1,172 @@
+"""Independent expected names, signatures and evidence. Not production-derived.
+
+Ungated (VERIFIED) detail reads mirror the SDK evidence markers:
+bookable_handyman_tasks, inventory_enums, inventory_paint_matches,
+help_center_bundle, referral_code, release_notes_diff (with currentBuild) and
+home_feed (with app_build).
+"""
+
+ENTITY = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+# name, SDK method, tool arguments, SDK argument tail, gated, SDK accepts home
+DETAIL_CASES: tuple[tuple[str, str, dict[str, object], tuple[object, ...], bool, bool], ...] = (
+    ("casa_list_bookable_handyman_tasks", "bookable_handyman_tasks", {}, (None,), False, True),
+    ("casa_get_membership_info", "membership_info", {"limit": 1}, (), True, True),
+    ("casa_get_membership_savings", "membership_savings", {"limit": 1}, (), True, True),
+    (
+        "casa_list_inventory_enums",
+        "inventory_enums",
+        {"enum_type": "light_fixture_type", "limit": 1},
+        ("light_fixture_type",),
+        False,
+        False,
+    ),
+    ("casa_get_release_notes_diff", "release_notes_diff", {"limit": 1}, (), False, False),
+    (
+        "casa_get_availability_request_details",
+        "availability_request_details",
+        {"availability_request_id": "availability-one", "limit": 1},
+        ("availability-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_get_document_details",
+        "document_details",
+        {"document_id": "doc-one"},
+        ("doc-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_list_document_suggestions",
+        "document_suggestions",
+        {"document_id": "doc-one", "limit": 1},
+        ("doc-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_list_document_structure_suggestions",
+        "document_structure_suggestions",
+        {"document_id": "doc-one", "limit": 1},
+        ("doc-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_get_inventory_paint_matches",
+        "inventory_paint_matches",
+        {"entity_id": ENTITY, "limit": 1},
+        (ENTITY,),
+        False,
+        True,
+    ),
+    (
+        "casa_list_request_purchases",
+        "request_purchases",
+        {"request_id": "request-one", "limit": 1},
+        ("request-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_get_task_details",
+        "task_details",
+        {"task_id": "task-one", "limit": 1},
+        ("task-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_get_vendor_visit_details",
+        "vendor_visit_details",
+        {"visit_id": "visit-one"},
+        ("visit-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_get_vendor_visit_autopilot_plan",
+        "vendor_visit_autopilot_plan",
+        {"visit_id": "visit-one", "plan_id": "plan-one", "limit": 1},
+        ("visit-one", "plan-one"),
+        True,
+        True,
+    ),
+    (
+        "casa_list_vendor_visit_calls",
+        "vendor_visit_calls",
+        {"visit_id": "visit-one", "limit": 1},
+        ("visit-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_get_vendor_visit_conversation",
+        "vendor_visit_conversation",
+        {"visit_id": "visit-one", "limit": 1},
+        ("visit-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_list_vendor_visit_purchases",
+        "vendor_visit_purchases",
+        {"visit_id": "visit-one", "limit": 1},
+        ("visit-one",),
+        True,
+        True,
+    ),
+    (
+        "casa_get_help_center_bundle",
+        "help_center_bundle",
+        {"app_id": "synthetic-app", "limit": 1},
+        ("synthetic-app",),
+        False,
+        False,
+    ),
+    ("casa_get_referral_code", "referral_code", {}, (), False, False),
+    ("casa_get_home_feed", "home_feed", {"limit": 1}, (), False, True),
+)
+PAGE_FIELDS = {"home_id", "offset", "limit"}
+INPUT_FIELDS = {
+    "casa_list_bookable_handyman_tasks": {"home_id", "include_current_vendor_visit_id"},
+    "casa_get_membership_info": PAGE_FIELDS,
+    "casa_get_membership_savings": PAGE_FIELDS,
+    "casa_list_inventory_enums": PAGE_FIELDS | {"enum_type"},
+    "casa_get_release_notes_diff": PAGE_FIELDS | {"include_content"},
+    "casa_get_availability_request_details": PAGE_FIELDS | {"availability_request_id"},
+    "casa_get_document_details": {"home_id", "document_id"},
+    "casa_list_document_suggestions": PAGE_FIELDS | {"document_id", "include_excerpts"},
+    "casa_list_document_structure_suggestions": PAGE_FIELDS | {"document_id", "include_excerpts"},
+    "casa_get_inventory_paint_matches": PAGE_FIELDS | {"entity_id"},
+    "casa_list_request_purchases": PAGE_FIELDS | {"request_id", "include_notes"},
+    "casa_get_task_details": PAGE_FIELDS | {"task_id", "include_messages"},
+    "casa_get_vendor_visit_details": {"home_id", "visit_id"},
+    "casa_get_vendor_visit_autopilot_plan": PAGE_FIELDS
+    | {"visit_id", "plan_id", "include_messages"},
+    "casa_list_vendor_visit_calls": PAGE_FIELDS | {"visit_id"},
+    "casa_get_vendor_visit_conversation": PAGE_FIELDS | {"visit_id", "include_messages"},
+    "casa_list_vendor_visit_purchases": PAGE_FIELDS | {"visit_id", "include_notes"},
+    "casa_get_help_center_bundle": PAGE_FIELDS | {"app_id", "kind", "include_body"},
+    "casa_get_referral_code": {"home_id"},
+    "casa_get_home_feed": PAGE_FIELDS,
+}
+REQUIRED_FIELDS = {
+    "casa_list_inventory_enums": {"enum_type"},
+    "casa_get_availability_request_details": {"availability_request_id"},
+    "casa_get_document_details": {"document_id"},
+    "casa_list_document_suggestions": {"document_id"},
+    "casa_list_document_structure_suggestions": {"document_id"},
+    "casa_get_inventory_paint_matches": {"entity_id"},
+    "casa_list_request_purchases": {"request_id"},
+    "casa_get_task_details": {"task_id"},
+    "casa_get_vendor_visit_details": {"visit_id"},
+    "casa_get_vendor_visit_autopilot_plan": {"visit_id", "plan_id"},
+    "casa_list_vendor_visit_calls": {"visit_id"},
+    "casa_get_vendor_visit_conversation": {"visit_id"},
+    "casa_list_vendor_visit_purchases": {"visit_id"},
+    "casa_get_help_center_bundle": {"app_id"},
+}
+GATED_METHODS = frozenset(method for _, method, _, _, gated, _ in DETAIL_CASES if gated)
+GATED_TOOLS = frozenset(name for name, _, _, _, gated, _ in DETAIL_CASES if gated)

@@ -3,27 +3,35 @@
 import asyncio
 
 import pytest
+from casahome import CasaApi, is_unverified
+from detail_cases import GATED_METHODS
 from mcp import Client
 from mcp.server.mcpserver.exceptions import ToolError
 from test_tools import (
     END,
+    ENTITY,
     FORBIDDEN_HOME,
+    GATED_CASES,
     HOME,
     MODES,
     REMOTE_CASES,
     SECOND_HOME,
     SECRET,
     START,
+    VERIFIED_CASES,
     Harness,
     RemoteCase,
     failed,
     guard_sockets,
     settings,
+    success,
 )
 
 from casahome_mcp.config import Settings
 from casahome_mcp.projections import project_weather
 from casahome_mcp.tools import READ_METHODS, read
+
+GATE = "GATE_OR_AUTH"
 
 
 @pytest.fixture(autouse=True)
@@ -31,10 +39,42 @@ def reject_socket_access(monkeypatch: pytest.MonkeyPatch) -> None:
     guard_sockets(monkeypatch)
 
 
+def test_gate_manifest_matches_sdk_evidence_markers() -> None:
+    # The gate is derived from the SDK marker. This pins the expected evidence.
+    for case in REMOTE_CASES:
+        assert is_unverified(getattr(CasaApi, case.method)) is case.gated
+    assert {case.method for case in GATED_CASES} == {"request_details"} | GATED_METHODS
+
+
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("case", REMOTE_CASES, ids=lambda case: case.name)
+@pytest.mark.parametrize("case", VERIFIED_CASES, ids=lambda case: case.name)
+async def test_verified_remotes_work_with_gate_at_default(mode: str, case: RemoteCase) -> None:
+    supplied = settings()
+    configured = Settings(homes=supplied.homes, refresh_token=supplied.refresh_token)
+    assert not configured.allow_unverified_reads
+    harness = Harness(configured)
+    async with Client(harness.server, mode=mode) as client:
+        payload = success(await client.call_tool(case.name, case.arguments))
+        assert payload["confidence"] == "VERIFIED"
+    assert harness.fake.calls == [(case.method, case.sdk_arguments(HOME))]
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("case", VERIFIED_CASES, ids=lambda case: case.name)
+async def test_verified_remotes_without_credentials_fail_auth_not_gate(
+    mode: str, case: RemoteCase
+) -> None:
+    harness = Harness(settings(enabled=False, token=False))
+    harness.app.api = None
+    async with Client(harness.server, mode=mode) as client:
+        failed(await client.call_tool(case.name, case.arguments), "AUTH_NOT_CONFIGURED")
+    assert harness.fake.calls == []
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("case", GATED_CASES, ids=lambda case: case.name)
 @pytest.mark.parametrize("token", [False, True])
-async def test_every_remote_is_disabled_by_default_even_without_credentials(
+async def test_unverified_remotes_are_disabled_by_default_even_without_credentials(
     mode: str, case: RemoteCase, token: bool
 ) -> None:
     # Use the actual Settings default rather than a separately supplied False flag.
@@ -62,7 +102,7 @@ async def test_every_remote_is_disabled_by_default_even_without_credentials(
         ((HOME, SECOND_HOME), None, True, True, True, "HOME_REQUIRED"),
         ((HOME,), FORBIDDEN_HOME, False, False, False, "HOME_NOT_ALLOWED"),
         ((HOME,), FORBIDDEN_HOME, True, True, True, "HOME_NOT_ALLOWED"),
-        ((HOME,), None, False, False, False, "UNVERIFIED_DISABLED"),
+        ((HOME,), None, False, False, False, GATE),
         ((HOME,), None, True, False, True, "AUTH_NOT_CONFIGURED"),
         ((HOME,), None, True, True, False, "AUTH_NOT_CONFIGURED"),
     ],
@@ -77,6 +117,9 @@ async def test_home_then_gate_then_credentials_precedence_without_sdk_access(
     api_present: bool,
     code: str,
 ) -> None:
+    if code == GATE:
+        # Gate precedes credentials only for reads the SDK still marks unverified.
+        code = "UNVERIFIED_DISABLED" if case.gated else "AUTH_NOT_CONFIGURED"
     harness = Harness(settings(homes=homes, enabled=enabled, token=token))
     if not api_present:
         harness.app.api = None
@@ -186,7 +229,8 @@ async def test_newline_request_id_cannot_escape_value_safe_validation(
 
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize(
-    "case", [case for case in REMOTE_CASES if "limit" in case.arguments] + [REMOTE_CASES[4]]
+    "case",
+    [case for case in REMOTE_CASES if "limit" in case.arguments or case.name == "casa_get_request"],
 )
 async def test_every_paginated_tool_rejects_bad_bounds_and_types_before_fetch(
     mode: str, case: RemoteCase, caplog: pytest.LogCaptureFixture
@@ -220,6 +264,8 @@ async def test_every_paginated_tool_rejects_bad_bounds_and_types_before_fetch(
     [
         ("casa_get_request", {"request_id": "request_one-1"}, "include_messages"),
         ("casa_list_mail_items", {}, "include_summary"),
+        ("casa_list_inventory", {}, "include_model_summary"),
+        ("casa_get_inventory_item", {"entity_id": ENTITY}, "include_model_summary"),
     ],
 )
 async def test_boolean_opt_ins_require_actual_json_booleans(
@@ -266,3 +312,37 @@ async def test_read_allowlist_cannot_authorize_bootstrap_or_unregistered_writes(
                     project_weather,
                 )
         assert harness.fake.calls == []
+
+
+WRITE_SURFACE_MARKERS = (
+    "create_todo",
+    "create_todo_result",
+    "send_request_message",
+    "update_entity_properties",
+    ".post(",
+    ".patch(",
+    ".client",
+)
+
+
+def test_adapter_source_never_references_sdk_write_surface() -> None:
+    """The adapter reads through CasaReads only. Writes and raw HTTP stay unreachable.
+
+    A plain text scan, so a new tool can't reach a write by any route, including
+    getattr strings, comments that become code, or the low-level client.
+    """
+    from pathlib import Path
+
+    import casahome_mcp
+
+    source_root = Path(casahome_mcp.__file__).parent
+    files = sorted(source_root.rglob("*.py"))
+    assert files
+    hits = [
+        f"{path.relative_to(source_root)}:{number}: {marker}"
+        for path in files
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        for marker in WRITE_SURFACE_MARKERS
+        if marker in line
+    ]
+    assert hits == []

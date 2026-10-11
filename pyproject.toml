@@ -7,7 +7,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
-    "python-casahome>=0.1.1,<0.2",
+    "python-casahome>=0.2.0,<0.3",
     "mcp>=2,<3",
     "aiohttp>=3.9,<4",
     "pydantic>=2.12,<3",
@@ -21,7 +21,7 @@ casahome-mcp = "casahome_mcp.__main__:main"
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "mypy>=1.10", "types-jsonschema"]
 
 [tool.uv.sources]
-python-casahome = { path = "../python-casahome", editable = true }
+python-casahome = { git = "https://github.com/borski/python-casahome", tag = "v0.2.0" }
 
 [build-system]
 requires = ["hatchling"]

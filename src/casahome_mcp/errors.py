@@ -20,7 +20,7 @@ MESSAGES = {
     "SCHEMA_MISMATCH": "Review the SDK contract against traffic. Raw fallback is disabled.",
     "UPSTREAM_UNAVAILABLE": "Upstream connectivity failed. No adapter retry was made.",
     "ACCESS_DENIED": "Casa denied access.",
-    "NOT_FOUND": "Casa returned not found. No alternate paths were tried.",
+    "NOT_FOUND": "The requested item wasn't found. No alternate paths were tried.",
     "RATE_LIMITED": "Casa rate-limited the request. No adapter retry was made.",
     "UPSTREAM_ERROR": "Casa returned an error.",
     "TIMEOUT": "The tool deadline expired.",

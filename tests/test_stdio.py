@@ -19,20 +19,28 @@ from typing import TextIO
 import anyio
 import pytest
 from anyio.abc import Process
+from coverage_cases import COVERAGE_CASES
+from detail_cases import DETAIL_CASES
+from detail_cases import GATED_TOOLS as DETAIL_GATED_TOOLS
 from mcp import Client
 from mcp.client import stdio as stdio_transport
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import CallToolResult, TextContent, Tool, jsonrpc_message_adapter
 
+from casahome_mcp.tools import TOOL_METHODS
+
 HOME_ID = "11111111-1111-4111-8111-111111111111"
 HOME_LABEL = "Synthetic home"
 DUMMY_TOKEN = "synthetic-refresh-token-never-log-stdio-42"
 LOCAL_TOOLS = frozenset({"casa_get_status", "casa_list_homes"})
-REMOTE_TOOLS = frozenset(
+REMOTE_TOOLS = (
+    frozenset(case[0] for case in COVERAGE_CASES) | frozenset(case[0] for case in DETAIL_CASES)
+) | frozenset(
     {
         "casa_get_badge_counts",
         "casa_get_weather",
         "casa_list_inventory",
+        "casa_get_inventory_item",
         "casa_list_requests",
         "casa_get_request",
         "casa_list_calendar",
@@ -42,6 +50,8 @@ REMOTE_TOOLS = frozenset(
         "casa_list_packages",
     }
 )
+# Reads python-casahome still marks unverified. Only these sit behind the gate.
+GATED_TOOLS = frozenset({"casa_get_request"}) | DETAIL_GATED_TOOLS
 INHERITED_SENTINEL = "synthetic-inherited-secret-must-not-reach-child"
 FORBIDDEN_INHERITED_KEYS = (
     "CASA_REFRESH_TOKEN",
@@ -284,7 +294,7 @@ def _structured_payload(result: CallToolResult) -> dict[str, object]:
 
 def _assert_tool_listing(tools: list[Tool]) -> None:
     names = [tool.name for tool in tools]
-    assert len(names) == len(set(names)) == 12
+    assert len(names) == len(set(names)) == len(TOOL_METHODS) + len(LOCAL_TOOLS)
     assert set(names) == LOCAL_TOOLS | REMOTE_TOOLS
     for tool in tools:
         assert tool.description and tool.description.strip()
@@ -294,10 +304,14 @@ def _assert_tool_listing(tools: list[Tool]) -> None:
         assert "context" not in properties
         if tool.name in LOCAL_TOOLS:
             assert properties == {}
-        else:
+        elif tool.name in GATED_TOOLS:
             assert "home_id" in properties
             assert "CASA_ALLOW_UNVERIFIED_READS" in tool.description
             assert "UNVERIFIED" in tool.description
+        else:
+            assert "home_id" in properties
+            assert "Casa read verified by SDK evidence." in tool.description
+            assert "CASA_ALLOW_UNVERIFIED_READS" not in tool.description
         assert tool.output_schema is not None
         assert tool.output_schema["type"] == "object"
         assert set(_object(tool.output_schema["properties"])) == {
@@ -377,8 +391,8 @@ async def test_real_stdio_smoke_and_clean_eof(
             assert data["refresh_token_rotated"] is False
             disabled = data["disabled_features"]
             assert isinstance(disabled, list)
-            assert len(disabled) == len(REMOTE_TOOLS)
-            assert set(disabled) == REMOTE_TOOLS
+            assert len(disabled) == len(GATED_TOOLS)
+            assert set(disabled) == GATED_TOOLS
 
             homes = _structured_payload(await client.call_tool("casa_list_homes"))
             assert homes == {
@@ -390,7 +404,10 @@ async def test_real_stdio_smoke_and_clean_eof(
                 "data": {"homes": [{"id": HOME_ID, "label": HOME_LABEL}]},
             }
 
-            denied = await client.call_tool("casa_get_weather", {"home_id": HOME_ID})
+            # The gated read must refuse before credentials, with or without a token.
+            denied = await client.call_tool(
+                "casa_get_request", {"home_id": HOME_ID, "request_id": "request_one-1"}
+            )
             assert denied.is_error is True
             assert denied.structured_content is None
             assert len(denied.content) == 1
@@ -399,6 +416,14 @@ async def test_real_stdio_smoke_and_clean_eof(
             assert "UNVERIFIED_DISABLED:" in error_text.text
             assert "CASA_ALLOW_UNVERIFIED_READS" in error_text.text
             assert "AUTH_NOT_CONFIGURED" not in error_text.text
+            if token is None:
+                # A verified read skips the gate but still can't reach Casa without a token.
+                unauth = await client.call_tool("casa_get_weather", {"home_id": HOME_ID})
+                assert unauth.is_error is True
+                assert unauth.structured_content is None
+                unauth_text = unauth.content[0]
+                assert isinstance(unauth_text, TextContent)
+                assert "AUTH_NOT_CONFIGURED:" in unauth_text.text
             child.assert_no_egress()
         # Leaving the official transport closes stdin. A signal-killed server
         # fails the returncode assertion instead of masquerading as an EOF exit.

@@ -24,10 +24,12 @@ from casahome_mcp.outputs import (
     CalendarData,
     CalendarEventSummary,
     CreditsData,
+    EntityPropertySummary,
     EntitySummary,
     HomesData,
     HomeSummary,
     InventoryData,
+    InventoryItemData,
     InventoryKind,
     MailboxData,
     MailboxSummary,
@@ -119,8 +121,8 @@ def _inventory(count: int = 1) -> HomeDetailsResponse:
                     "status": "future-inventory-status",
                     "rooms": ["room-one"],
                     "stories": ["story-one"],
-                    "make": {"password": PRIVATE},
-                    "model": [PRIVATE],
+                    "make": {"id": "make-one", "name": "Example make", "password": PRIVATE},
+                    "model": {"id": "model-one", "name": "Example model", "password": PRIVATE},
                     "manuals": [{"download_url": PRIVATE}],
                     "thumbnail_url": PRIVATE,
                     "password": PRIVATE,
@@ -334,7 +336,9 @@ def test_socket_guard_negative_control() -> None:
         WeatherData,
         RoomSummary,
         EntitySummary,
+        EntityPropertySummary,
         InventoryData,
+        InventoryItemData,
         RequestCardSummary,
         TodoSummary,
         RequestsData,
@@ -518,7 +522,7 @@ def test_weather_keeps_enum_values_and_nulls(condition: str) -> None:
     _assert_private(data)
 
 
-def test_inventory_entities_are_allowlisted_and_do_not_assume_make_model_types() -> None:
+def test_inventory_entities_project_typed_make_model_without_extras() -> None:
     data, warnings = project_inventory(_inventory())
     assert data.kind == "entities"
     assert data.page.items[0].model_dump() == {
@@ -530,6 +534,12 @@ def test_inventory_entities_are_allowlisted_and_do_not_assume_make_model_types()
         "type": None,
         "rooms": ["room-one"],
         "stories": ["story-one"],
+        "make": "Example make",
+        "model": "Example model",
+        "serial_number": None,
+        "identity_state": None,
+        "properties": [],
+        "model_summary": None,
     }
     assert warnings == [COMPLETENESS]
     _assert_private(data)

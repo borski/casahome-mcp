@@ -312,7 +312,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.26,<5" },
     { name = "mcp", specifier = ">=2,<3" },
     { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "python-casahome", editable = "../python-casahome" },
+    { name = "python-casahome", git = "https://github.com/borski/python-casahome?tag=v0.2.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1466,25 +1466,11 @@ wheels = [
 
 [[package]]
 name = "python-casahome"
-version = "0.1.1"
-source = { editable = "../python-casahome" }
+version = "0.2.0"
+source = { git = "https://github.com/borski/python-casahome?tag=v0.2.0#cf1bc2619ab8d0a54d2bb213b8d3b6070375a35e" }
 dependencies = [
     { name = "aiohttp" },
     { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiohttp", specifier = ">=3.9" },
-    { name = "pydantic", specifier = ">=2.5" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.10" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-asyncio", specifier = ">=0.23" },
-    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]

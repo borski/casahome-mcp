@@ -4,6 +4,7 @@ Only selected page items are projected. Warnings describe the returned data.
 The tool layer owns envelope size checks and sanitized SDK/validation errors.
 """
 
+import re
 from collections.abc import Callable, Sequence
 from typing import Literal, TypeVar
 
@@ -14,6 +15,7 @@ from casahome.models.home import (
     HomeDetailsResponse,
     HomeRoom,
     HomeStory,
+    PropertyValue,
     SimpleEntity,
     WeatherResponse,
 )
@@ -32,8 +34,10 @@ from casahome_mcp.outputs import (
     CalendarData,
     CalendarEventSummary,
     CreditsData,
+    EntityPropertySummary,
     EntitySummary,
     InventoryData,
+    InventoryItemData,
     InventoryKind,
     MailboxData,
     MailboxSummary,
@@ -55,7 +59,20 @@ from casahome_mcp.outputs import (
 
 S = TypeVar("S")
 T = TypeVar("T", bound=OutputModel)
-ProjectionCode = Literal["INVALID_ARGUMENT", "OUTPUT_TOO_LARGE"]
+ProjectionCode = Literal["INVALID_ARGUMENT", "NOT_FOUND", "OUTPUT_TOO_LARGE"]
+MAX_ENTITY_PROPERTIES = 20
+# Media links and their cache keys never leave the adapter, even inside properties.
+_URL_KEY = re.compile(
+    r"url|cache|thumbnail"
+    r"|(?:^|[^a-z0-9])(?:uri|media|images?|photos?|manuals?|attachments?|videos?)(?:$|[^a-z0-9])",
+    re.IGNORECASE,
+)
+_URL_VALUE = re.compile(
+    r"(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*://"
+    r"|(?<![a-z0-9])(?://|www\.|data:|mailto:|tel:|javascript:)"
+    r"|(?:^|\s)(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b",
+    re.IGNORECASE,
+)
 
 
 class ProjectionError(Exception):
@@ -136,7 +153,69 @@ def project_weather(model: WeatherResponse) -> tuple[WeatherData, list[str]]:
     ), []
 
 
-def _entity(model: SimpleEntity, warnings: list[str]) -> EntitySummary:
+def _scalar_text(value: PropertyValue) -> str | None:
+    """Render a property scalar as text. JSON spelling for booleans."""
+    match value:
+        case None:
+            return None
+        case bool():
+            return "true" if value else "false"
+        case _:
+            return str(value)
+
+
+def _safe_entity_text(text: str | None, maximum: int, warnings: list[str]) -> str | None:
+    if text is not None and _URL_VALUE.search(text):
+        _warn(warnings, "URL_PROPERTY_OMITTED")
+        return None
+    return _optional_clip(text, maximum, warnings)
+
+
+def _is_media_field(text: str) -> bool:
+    # Split camelCase before matching whole media words. Don't drop "security"
+    # or "immediate" just because they contain "uri" or "media".
+    normalized = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", text)
+    return _URL_KEY.search(normalized) is not None
+
+
+def _entity_properties(model: SimpleEntity, warnings: list[str]) -> list[EntityPropertySummary]:
+    """Non-null, non-URL entity properties in source order, at most 20."""
+    selected: list[EntityPropertySummary] = []
+    for prop in model.entity_properties:
+        text = _scalar_text(prop.value)
+        if text is None:
+            continue
+        if (
+            _is_media_field(prop.key)
+            or _is_media_field(prop.title)
+            or _URL_VALUE.search(prop.key)
+            or _URL_VALUE.search(prop.title)
+            or _URL_VALUE.search(text)
+        ):
+            _warn(warnings, "URL_PROPERTY_OMITTED")
+            continue
+        if len(selected) == MAX_ENTITY_PROPERTIES:
+            _warn(warnings, "NESTED_COLLECTION_TRUNCATED")
+            break
+        selected.append(
+            EntityPropertySummary(
+                key=_clip(prop.key, 256, warnings),
+                title=_clip(prop.title, 256, warnings),
+                value=_clip(text, 256, warnings),
+            )
+        )
+    return selected
+
+
+def _entity(
+    model: SimpleEntity, warnings: list[str], *, include_model_summary: bool = False
+) -> EntitySummary:
+    catalog_model = model.model
+    model_summary = (
+        _scalar_text(catalog_model.property_value("summary"))
+        if include_model_summary and catalog_model is not None
+        else None
+    )
     return EntitySummary(
         id=model.id,
         category_id=model.category_id,
@@ -146,6 +225,18 @@ def _entity(model: SimpleEntity, warnings: list[str]) -> EntitySummary:
         type=_optional_clip(model.type, 256, warnings),
         rooms=_ids(model.rooms, warnings),
         stories=_ids(model.stories, warnings),
+        make=_safe_entity_text(None if model.make is None else model.make.name, 256, warnings),
+        model=_safe_entity_text(
+            None if catalog_model is None else catalog_model.name, 256, warnings
+        ),
+        serial_number=_safe_entity_text(
+            _scalar_text(model.property_value("serial_number")), 256, warnings
+        ),
+        identity_state=_safe_entity_text(
+            None if model.identity is None else model.identity.state, 256, warnings
+        ),
+        properties=_entity_properties(model, warnings),
+        model_summary=_safe_entity_text(model_summary, 2000, warnings),
     )
 
 
@@ -165,15 +256,41 @@ def project_inventory(
     kind: InventoryKind = "entities",
     offset: int = 0,
     limit: int = 25,
+    room: str | None = None,
+    category: str | None = None,
+    include_model_summary: bool = False,
 ) -> tuple[InventoryData, list[str]]:
+    """Page rooms or entities. ``room``/``category`` are exact entity filters."""
     warnings = ["UPSTREAM_COMPLETENESS_UNKNOWN"]
     result: Page[EntitySummary | RoomSummary]
     if kind == "entities":
+        room_ids = {
+            label
+            for story in model.home.stories
+            for item in story.rooms
+            if room in (item.id, item.name)
+            for label in (item.id, item.name)
+        }
+        if room is not None:
+            room_ids.add(room)
+        entities = [
+            entity
+            for entity in model.entities
+            if (room is None or not room_ids.isdisjoint(entity.rooms))
+            and (category is None or entity.category == category)
+        ]
         result = page(
-            model.entities, project=lambda item: _entity(item, warnings), offset=offset, limit=limit
+            entities,
+            project=lambda item: _entity(
+                item, warnings, include_model_summary=include_model_summary
+            ),
+            offset=offset,
+            limit=limit,
         )
     elif kind == "rooms":
-        rooms = [(room, story) for story in model.home.stories for room in story.rooms]
+        if room is not None or category is not None or include_model_summary:
+            raise ProjectionError("INVALID_ARGUMENT")
+        rooms = [(item, story) for story in model.home.stories for item in story.rooms]
         result = page(
             rooms,
             project=lambda item: _room(item[0], item[1], warnings),
@@ -183,6 +300,20 @@ def project_inventory(
     else:
         raise ProjectionError("INVALID_ARGUMENT")
     return InventoryData(kind=kind, page=result), warnings
+
+
+def project_inventory_item(
+    model: HomeDetailsResponse, *, entity_id: str, include_model_summary: bool = False
+) -> tuple[InventoryItemData, list[str]]:
+    """Project the first entity whose ID matches ``entity_id`` case-insensitively."""
+    wanted = entity_id.lower()
+    entity = next((item for item in model.entities if item.id.lower() == wanted), None)
+    if entity is None:
+        raise ProjectionError("NOT_FOUND")
+    warnings: list[str] = []
+    return InventoryItemData(
+        entity=_entity(entity, warnings, include_model_summary=include_model_summary)
+    ), warnings
 
 
 def _request_card(

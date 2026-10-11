@@ -13,10 +13,36 @@ from uuid import UUID
 from jsonschema import Draft202012Validator
 from mcp.server import MCPServer, ServerRequestContext
 from mcp.server.context import CallNext, HandlerResult, ServerMiddleware
+from mcp.server.mcpserver.utilities.func_metadata import FuncMetadata
 from mcp.types import CallToolResult, TextContent
+from pydantic import ValidationError
+
+from .actions.models import CONTENT_FIELDS
 
 
-def input_guard(server: MCPServer) -> ServerMiddleware[Any]:
+def safe_strings(value: object, content_fields: set[str], field: str = "") -> bool:
+    if isinstance(value, str):
+        return not any(
+            category(char) in {"Cc", "Cf", "Cs", "Zl", "Zp"}
+            and not (field in content_fields and char in "\n\r\t")
+            for char in value
+        )
+    if isinstance(value, dict):
+        return all(
+            isinstance(key, str)
+            and safe_strings(key, set())
+            and safe_strings(item, content_fields, key)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return all(safe_strings(item, content_fields, field) for item in value)
+    return True
+
+
+def input_guard(
+    server: MCPServer,
+    action_validators: dict[str, FuncMetadata] | None = None,
+) -> ServerMiddleware[Any]:
     async def guard(ctx: ServerRequestContext[Any], call_next: CallNext) -> HandlerResult:
         if ctx.method != "tools/call":
             return await call_next(ctx)
@@ -30,13 +56,8 @@ def input_guard(server: MCPServer) -> ServerMiddleware[Any]:
         schema = deepcopy(tools[name].input_schema)
         schema["additionalProperties"] = False
         arguments = params.get("arguments", {})
-        # Python JSON Schema regexes accept a trailing newline at '$', while
-        # Pydantic's Rust regex engine rejects it and echoes the rejected value.
-        # All exposed string inputs are identifiers/dates/filters, never multiline text.
-        if isinstance(arguments, dict) and any(
-            isinstance(value, str) and any(category(char) in {"Cc", "Cf"} for char in value)
-            for value in arguments.values()
-        ):
+        # Content-only multiline allowance is tool-specific and recursive.
+        if not safe_strings(arguments, CONTENT_FIELDS.get(name, set())):
             return refusal()
         if isinstance(arguments, dict):
             # JSON Schema accepts 1.0 as an integer, strict Pydantic doesn't.
@@ -100,6 +121,13 @@ def input_guard(server: MCPServer) -> ServerMiddleware[Any]:
                         return refusal()
         if not Draft202012Validator(schema).is_valid(arguments):
             return refusal()
+        if action_validators is not None and name in action_validators:
+            try:
+                # Actual MCP v2 JSON-string preprocessing and argument codec,
+                # before MCP's Pydantic error formatter can echo input values.
+                action_validators[name].validate_arguments(arguments)
+            except (ValidationError, ValueError, TypeError, RecursionError):
+                return refusal()
         return await call_next(ctx)
 
     return guard

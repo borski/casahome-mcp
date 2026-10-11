@@ -70,8 +70,8 @@ class CoverageFake:
                                 "cache_key": SECRET,
                             }
                         ],
-                        "destination": {"password": SECRET},
-                        "question_rounds": [{"token": SECRET}],
+                        "destination": {"kind": "future-kind", "password": SECRET},
+                        "question_rounds": [{"id": "round-one", "token": SECRET}],
                         "unknown": {"token": SECRET},
                     }
                 ],

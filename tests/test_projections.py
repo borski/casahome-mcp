@@ -449,6 +449,9 @@ def test_local_status_and_home_contracts() -> None:
         "token_configured",
         "configured_home_count",
         "allow_unverified_reads",
+        "allow_actions",
+        "allow_messages",
+        "allow_uploads",
         "refresh_token_rotated",
         "disabled_features",
     }

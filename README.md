@@ -1,6 +1,6 @@
 # casahome-mcp
 
-A read-only MCP server for Casa home membership data, built on
+A local MCP server for Casa home membership reads and explicitly confirmed actions, built on
 [python-casahome](https://github.com/borski/python-casahome).
 
 **Unofficial. Not affiliated with or endorsed by Casa.**
@@ -16,46 +16,45 @@ and more.
 `python-casahome` handles authentication, HTTP and wire models. This package adds
 tool policy, input validation and bounded, allowlisted output projections.
 
-It is read-only by design:
+Reads remain isolated from the action surface:
 
-- No write tools. It never sends messages, books visits, approves purchases,
-  uploads documents or changes plans.
+- Actions are disabled by default. Named prepare tools never mutate the account.
+  A separate single-use execute tool requires specific user approval first.
+- No booking, billing, purchases, mailbox claims or access-preference writes.
 - No raw HTTP or passthrough tool, and no "return the raw response" option.
 - It never registers a device or discovers homes. You configure home IDs yourself.
-- A source-scan test fails if the adapter code references the SDK's write methods.
+- Source scans forbid SDK writes in read modules. Action invocations have an exact
+  allowlist and never expose generic paths, URLs or HTTP.
 
 Reads can still cause HTTP POSTs to Firebase when the SDK refreshes an access
-token. Read-only means no Casa writes, not zero POSTs.
+token. Read tools don't perform Casa writes.
 
 ## Install
 
-Requires Python 3.11+. Run directly from PyPI with [uv](https://docs.astral.sh/uv/):
+### TEMPDEV release blocker
+
+This checkout is **0.2.0, local only**. It requires `python-casahome>=0.3,<0.4`.
+SDK 0.3 isn't published to PyPI yet. `[tool.uv.sources]` temporarily selects the
+editable sibling `../python-casahome`. The lockfile records that local dependency.
+Don't tag, publish or recommend this development version as a PyPI install.
+Before release, publish/review SDK 0.3 separately, remove the temporary source,
+relock against the published SDK and rerun the full offline validation suite.
+
+Requires Python 3.11+. Run this checkout with:
 
 ```sh
-uvx casahome-mcp
+uv run --locked casahome-mcp
 ```
 
-Or install a persistent `casahome-mcp` command with uv:
-
-```sh
-uv tool install casahome-mcp
-```
-
-With pip, install into an activated virtual environment:
-
-```sh
-pip install casahome-mcp
-```
-
-These commands install `casahome-mcp` and its `python-casahome>=0.2.0,<0.3`
-dependency from PyPI. No Git checkout is needed.
+Previously published versions can still be installed from PyPI with `uvx`.
+They don't provide the action tools described here.
 
 `python -m casahome_mcp` is an equivalent entry point. The command starts a
 stdio server that waits for an MCP host. It isn't an interactive shell.
 
 ## Configuration
 
-The server reads three environment variables at launch. It doesn't load `.env`
+The server reads six environment variables at launch. It doesn't load `.env`
 files, read config files, call a secrets manager or accept credentials as CLI
 arguments. Settings are fixed for the life of the process.
 
@@ -63,14 +62,21 @@ arguments. Settings are fixed for the life of the process.
 |---|---|---|
 | `CASA_REFRESH_TOKEN` | unset | Firebase refresh token for your Casa account |
 | `CASA_HOMES_JSON` | `[]` | JSON list of up to 16 home UUIDs with labels |
-| `CASA_ALLOW_UNVERIFIED_READS` | `false` | Enables the 14 reads the SDK marks unverified |
+| `CASA_ALLOW_UNVERIFIED_READS` | `false` | Enables reads the SDK still marks unverified |
+| `CASA_ALLOW_ACTIONS` | `false` | Allows household action preparation and execution |
+| `CASA_ALLOW_MESSAGES` | `false` | Additionally allows Casa AI and request-thread text sends |
+| `CASA_ALLOW_UPLOADS` | `false` | Additionally allows explicit local file snapshots and uploads |
 
 Notes:
 
 - An unset or empty token means unconfigured. Whitespace-only tokens and
   unresolved `op://` references are rejected without echoing them.
 - `CASA_HOMES_JSON` rejects duplicate IDs and unknown fields.
-- `CASA_ALLOW_UNVERIFIED_READS` accepts only `true` or `false`, case-insensitively.
+- All flags accept only `true` or `false`, case-insensitively.
+- Messages and uploads also require `CASA_ALLOW_ACTIONS=true`. Setting only their
+  specialized flag doesn't authorize them. Household todo creation and concierge
+  handoff use ACTIONS. They aren't AI/request-thread message sends.
+- Flags are operator policy, not authorization from a user to perform an action.
 
 Home list format:
 
@@ -126,7 +132,8 @@ authenticates and authorizes the account.
 
 ## Tools
 
-57 tools: 2 local tools and 55 remote reads over 54 SDK methods. "Gated" tools
+74 tools: the existing 57 read/local tools plus 15 action prepares, execute and cancel.
+55 remote reads use 54 SDK methods. "Gated" read tools
 are disabled unless `CASA_ALLOW_UNVERIFIED_READS=true`. Gating comes from the
 SDK's evidence marker (`casahome.is_unverified`), so it changes automatically
 when the SDK promotes a method. `casa_get_status` lists the currently blocked
@@ -165,7 +172,7 @@ tools in `disabled_features`.
 | Tool | Gated | Returns |
 |---|---|---|
 | `casa_list_requests` | | Request or todo cards by section |
-| `casa_get_request` | Yes | Request detail. Messages only with `include_messages`. |
+| `casa_get_request` | | Request detail. Messages only with `include_messages`. |
 | `casa_list_completed_requests` | | Completed requests with upstream pagination |
 | `casa_list_suggested_todos` | | Suggested todos. Prepared brief only with `include_brief`. |
 | `casa_get_todo` | | One todo. Prepared brief only with `include_brief`. |
@@ -191,9 +198,9 @@ tools in `disabled_features`.
 | Tool | Gated | Returns |
 |---|---|---|
 | `casa_list_purchases` | | Pending, approved and purchased items. Return notes opt-in. |
-| `casa_list_request_purchases` | Yes | Purchases for a request. Return notes opt-in. |
+| `casa_list_request_purchases` | | Purchases for a request. Return notes opt-in. |
 | `casa_get_credits` | | Credit balance and the explicit hourly cents field |
-| `casa_get_membership_info` | Yes | Membership name, member-since and benefits. No billing. |
+| `casa_get_membership_info` | | Membership name, member-since and benefits. No billing. |
 | `casa_get_membership_savings` | Yes | Saved seconds/cents, categories and breakdown |
 | `casa_get_referral_code` | | Referral code, allowlisted labels and referred-home count. No URL. |
 
@@ -206,9 +213,9 @@ tools in `disabled_features`.
 | `casa_list_packages` | | Package metadata, no tracking numbers or pickup codes |
 | `casa_list_documents` | | Document metadata with cursor pagination, no URLs |
 | `casa_list_document_types` | | Document types and upload limits |
-| `casa_get_document_details` | Yes | One document's metadata and processing status |
-| `casa_list_document_suggestions` | Yes | Existing document suggestions. Excerpts opt-in. |
-| `casa_list_document_structure_suggestions` | Yes | Existing structure suggestions. Excerpts opt-in. |
+| `casa_get_document_details` | | One document's metadata and processing status |
+| `casa_list_document_suggestions` | | Existing suggestions. Optional `view`, default `all`. No other view values. |
+| `casa_list_document_structure_suggestions` | | Existing structure suggestions and guard values. Excerpts opt-in. |
 | `casa_get_work_document_source` | | Source documents and citations for a todo, task or request. Excerpts opt-in. |
 | `casa_get_help_center_bundle` | | Help topics or articles by app ID. Article body opt-in. |
 | `casa_get_release_notes_diff` | | Release notes newer than the SDK's app build. Content opt-in. |
@@ -224,21 +231,103 @@ tools in `disabled_features`.
 | `casa_list_onboarding_availability` | | Onboarding slot start times, timezone and duration |
 | `casa_list_onboarding_calendar` | | Onboarding calendar start/end timestamps |
 
+## Preview-first actions
+
+The following prepares use only the named, verified SDK method variants.
+They never perform a Casa write:
+
+| Tool | Scope |
+|---|---|
+| `casa_prepare_move_entity_to_room` | Move an inventory UUID to a room UUID |
+| `casa_prepare_rate_ai_message` | `good` or `bad`, no clear variant |
+| `casa_prepare_respond_to_suggested_todo` | Required `decision="accept"` only |
+| `casa_prepare_send_todo_to_concierge` | Concierge destination only |
+| `casa_prepare_answer_todo_question` | Single/multi-select answer, `skip=false` only |
+| `casa_prepare_submit_todo_question_round` | Explicit single/multi-select round answers |
+| `casa_prepare_update_autopilot_plan` | `every_quarter`, explicit enabled/date, empty association map |
+| `casa_prepare_update_notification_settings` | Explicit notification type and `push` pairs |
+| `casa_prepare_send_ai_message` | Text only, additionally requires MESSAGES |
+| `casa_prepare_send_request_message` | Member-role text only, additionally requires MESSAGES |
+| `casa_prepare_create_todo_result` | Text-only todo, preserves support-confirmation flag |
+| `casa_prepare_upload_document` | One explicit file snapshot, additionally requires UPLOADS |
+| `casa_prepare_delete_todo` | Permanent deletion, no related-work cleanup |
+| `casa_prepare_update_entity_model` | Nonblank model name with empty props only |
+| `casa_prepare_respond_to_document_structure_suggestion` | Required `accepted` decision and exact `expected_values` |
+
+1. Call the named prepare tool with explicit parameters.
+2. Show the user the exact preview, including its home, targets, full content and risks.
+3. Obtain the user's specific approval for that action. Implementation, flags and
+   possession of a token aren't proof of human consent.
+4. Call `casa_execute_action(confirmation_token, confirmed=true)` once.
+   `confirmed=false` makes zero SDK calls and doesn't consume the token.
+
+`casa_cancel_action(confirmation_token)` consumes a preview locally, releasing its
+snapshot. Tokens are random, memory-only and expire after five minutes. They bind
+the selected home, named operation and validated immutable payload. Execution
+rechecks home, flags and authentication configuration. It atomically consumes the
+token before any await or SDK call. Concurrent or repeated execution can't send twice.
+Shutdown clears all pending previews.
+
+SDK failures and timeouts return `outcome="UNKNOWN"`. A write or an earlier upload
+step may already have happened. The token stays consumed. Never automatically retry,
+prepare a replacement or perform follow-up actions. Read the relevant resource to
+reconcile an uncertain outcome. Invalid, expired, cancelled and replayed tokens use
+one private error. Outputs contain status only, not raw SDK models or response text.
+
+Examples of prepare inputs. None authorizes execution by itself:
+
+```json
+{"todo_id": "todo-example"}
+```
+
+Use with `casa_prepare_send_todo_to_concierge`, then show its exact preview and ask
+for approval. `casa_cancel_action` can discard it instead.
+
+```json
+{"request_id": "request-example", "content": "Please check the kitchen tap.\nIt still drips."}
+```
+
+Use with `casa_prepare_send_request_message`. Only named content fields allow
+multiline text. Invisible controls and unknown fields remain forbidden.
+
+```json
+{"file_path": "/explicit/path/report.pdf", "filename": "report.pdf", "mimetype": "application/pdf", "find_todos": false}
+```
+
+Use with `casa_prepare_upload_document`. Paths can be anywhere the process can
+read. No folder restriction, glob, directory scan or path-based execute is exposed.
+Symlinks to regular files are allowed. Nonblocking open plus descriptor `fstat`
+rejects FIFOs, devices and directories before reading. Bytes are snapshotted once,
+bounded to 25 MiB and the Casa document-type/size policy fetched before writes.
+The preview includes basename, MIME type, size, SHA-256, `find_todos` and the risk
+of document creation and suggested todos. Source bytes are never returned or logged.
+Execution passes immutable bytes to SDK `upload_document`, never rereads the path,
+and never accepts a storage URL. The SDK restricts storage uploads to its supported
+Google Storage host. Partial steps aren't automatically undone.
+
+At most 16 previews and 64 MiB of pending upload snapshots are retained. Expired
+previews are purged before allocation. Cancellation and shutdown release snapshots.
+Plan updates can affect paid future services. Empty association-map preservation
+semantics remain unverified. Other cadences, notification channels, declines,
+question skipping, attachments, property edits and clear operations aren't exposed.
+
 ## Privacy design
 
 Every output is built from an explicit field allowlist. Unknown SDK fields are
 dropped, not passed through. The server never returns:
 
-- Credentials or tokens, including rotated refresh tokens
+- Credentials, including rotated refresh tokens. Local action confirmation tokens
+  are intentionally returned by prepare tools only.
 - Signed media, download, image, document, invoice or referral URLs
 - Payment, card and billing details, invoice identifiers and pricing blobs
 - Owner identity, addresses, account numbers and utility credentials
 - Vehicle VINs, locations and telemetry
 - Phone numbers, user IDs, call join URLs and recording URLs
-- Attachments, original filenames and uploader names
+- Attachments and uploader names. Read tools omit original filenames. Upload
+  previews intentionally include the chosen basename, never the local source path.
 - Tracking numbers and pickup codes
-- Opaque blobs such as handyman task items, message parts and feed children
-  (these are counted, not decoded)
+- Opaque blobs such as handyman task items, unknown message parts and feed children.
+  Opted-in AI parts expose only text and `data-todo` type, todo ID, title and status.
 
 Free text (messages, mail summaries, briefs, excerpts, article bodies, return
 notes) is off by default and requires an explicit `include_*` argument. All

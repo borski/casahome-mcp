@@ -567,9 +567,9 @@ class DetailFake:
         return self.document
 
     async def document_suggestions(
-        self, home_id: str, document_id: str
+        self, home_id: str, document_id: str, *, view: str | None = None
     ) -> DocumentSuggestionsResponse:
-        await self._before("document_suggestions", home_id, document_id)
+        await self._before("document_suggestions", home_id, document_id, view)
         return self.doc_suggestions
 
     async def document_structure_suggestions(

@@ -26,7 +26,9 @@ from mcp import Client
 from mcp.client import stdio as stdio_transport
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import CallToolResult, TextContent, Tool, jsonrpc_message_adapter
+from test_actions import CASES as ACTION_CASES
 
+from casahome_mcp.actions.tools import ACTION_TOOLS
 from casahome_mcp.tools import TOOL_METHODS
 
 HOME_ID = "11111111-1111-4111-8111-111111111111"
@@ -51,12 +53,15 @@ REMOTE_TOOLS = (
     }
 )
 # Reads python-casahome still marks unverified. Only these sit behind the gate.
-GATED_TOOLS = frozenset({"casa_get_request"}) | DETAIL_GATED_TOOLS
+GATED_TOOLS = DETAIL_GATED_TOOLS
 INHERITED_SENTINEL = "synthetic-inherited-secret-must-not-reach-child"
 FORBIDDEN_INHERITED_KEYS = (
     "CASA_REFRESH_TOKEN",
     "CASA_HOMES_JSON",
     "CASA_ALLOW_UNVERIFIED_READS",
+    "CASA_ALLOW_ACTIONS",
+    "CASA_ALLOW_MESSAGES",
+    "CASA_ALLOW_UPLOADS",
     "CASA_UNKNOWN_SETTING",
     "OP_SERVICE_ACCOUNT_TOKEN",
     "OP_SESSION_TEST",
@@ -294,9 +299,12 @@ def _structured_payload(result: CallToolResult) -> dict[str, object]:
 
 def _assert_tool_listing(tools: list[Tool]) -> None:
     names = [tool.name for tool in tools]
-    assert len(names) == len(set(names)) == len(TOOL_METHODS) + len(LOCAL_TOOLS)
-    assert set(names) == LOCAL_TOOLS | REMOTE_TOOLS
+    assert len(names) == len(set(names)) == len(TOOL_METHODS) + len(LOCAL_TOOLS) + len(ACTION_TOOLS)
+    assert set(names) == LOCAL_TOOLS | REMOTE_TOOLS | ACTION_TOOLS
     for tool in tools:
+        if tool.name in ACTION_TOOLS:
+            assert tool.annotations and tool.annotations.read_only_hint is False
+            continue  # Exact action annotations covered by the action protocol tests.
         assert tool.description and tool.description.strip()
         assert tool.input_schema["type"] == "object"
         properties = _object(tool.input_schema["properties"])
@@ -388,6 +396,7 @@ async def test_real_stdio_smoke_and_clean_eof(
             assert data["token_configured"] is (token is not None)
             assert data["configured_home_count"] == 1
             assert data["allow_unverified_reads"] is False
+            assert data["allow_actions"] is data["allow_messages"] is data["allow_uploads"] is False
             assert data["refresh_token_rotated"] is False
             disabled = data["disabled_features"]
             assert isinstance(disabled, list)
@@ -406,7 +415,7 @@ async def test_real_stdio_smoke_and_clean_eof(
 
             # The gated read must refuse before credentials, with or without a token.
             denied = await client.call_tool(
-                "casa_get_request", {"home_id": HOME_ID, "request_id": "request_one-1"}
+                "casa_get_task_details", {"home_id": HOME_ID, "task_id": "task-one"}
             )
             assert denied.is_error is True
             assert denied.structured_content is None
@@ -416,6 +425,24 @@ async def test_real_stdio_smoke_and_clean_eof(
             assert "UNVERIFIED_DISABLED:" in error_text.text
             assert "CASA_ALLOW_UNVERIFIED_READS" in error_text.text
             assert "AUTH_NOT_CONFIGURED" not in error_text.text
+            for operation, arguments in ACTION_CASES:
+                action_denied = await client.call_tool(
+                    "casa_prepare_" + operation, {**arguments, "home_id": HOME_ID}
+                )
+                assert action_denied.is_error
+                assert "ACTIONS_DISABLED" in action_denied.model_dump_json()
+            upload_denied = await client.call_tool(
+                "casa_prepare_upload_document",
+                {
+                    "file_path": "/synthetic/never-read",
+                    "filename": "fixture.txt",
+                    "mimetype": "text/plain",
+                    "find_todos": False,
+                    "home_id": HOME_ID,
+                },
+            )
+            assert upload_denied.is_error
+            assert "ACTIONS_DISABLED" in upload_denied.model_dump_json()
             if token is None:
                 # A verified read skips the gate but still can't reach Casa without a token.
                 unauth = await client.call_tool("casa_get_weather", {"home_id": HOME_ID})

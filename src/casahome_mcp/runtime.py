@@ -62,6 +62,9 @@ from casahome.models.tasks import BookableHandymanTasksResponse, GroupedTaskDeta
 from casahome.models.taxes import PropertyTaxesResponse
 from casahome.models.visits import VendorVisitDetails, VisitCallsResponse, VisitConversation
 
+from .action_protocol import CasaActionsProtocol
+from .actions.store import ActionStore
+from .actions.uploads import SnapshotWorker
 from .config import Settings
 
 
@@ -147,7 +150,7 @@ class CasaReads(Protocol):
     ) -> MemberAvailabilityDetail: ...
     async def document_details(self, home_id: str, document_id: str) -> DocumentDetailsResponse: ...
     async def document_suggestions(
-        self, home_id: str, document_id: str
+        self, home_id: str, document_id: str, *, view: str | None = None
     ) -> DocumentSuggestionsResponse: ...
     async def document_structure_suggestions(
         self, home_id: str, document_id: str
@@ -177,6 +180,11 @@ class CasaReads(Protocol):
 class AppContext:
     settings: Settings
     api: CasaReads | None = field(default=None, repr=False)
+    actions: CasaActionsProtocol | None = field(default=None, repr=False)
+    action_store: ActionStore = field(default_factory=ActionStore, repr=False)
+    upload_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    upload_workers: set[SnapshotWorker] = field(default_factory=set, repr=False)
+    uploads_closed: bool = False
     semaphore: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(2), repr=False)
     refresh_token_rotated: bool = False
     deadline_seconds: float = 45.0
@@ -201,5 +209,7 @@ async def sdk_runtime(settings: Settings) -> AsyncIterator[AppContext]:
             settings.refresh_token.get_secret_value(),
             on_refresh_token_rotated=app.on_rotated,
         )
-        app.api = CasaApi(CasaClient(session, auth))
+        api = CasaApi(CasaClient(session, auth))
+        app.api = api
+        app.actions = api
         yield app

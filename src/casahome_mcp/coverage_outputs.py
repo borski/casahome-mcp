@@ -233,11 +233,20 @@ class NotificationsData(OutputModel):
     page: Page[NotificationGroupSummary]
 
 
+class AIMessagePartSummary(OutputModel):
+    type: Literal["text", "data-todo"]
+    text: Brief | None = None
+    todo_id: Text | None = None
+    title: Text | None = None
+    status: Text | None = None
+
+
 class AIMessageSummary(OutputModel):
     id: Text | None
     sender_role: Text | None
     created_at: int | None
     content: Brief | None
+    parts: list[AIMessagePartSummary] | None = Field(default=None, max_length=20)
 
 
 class AIHistoryData(OutputModel):

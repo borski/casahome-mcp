@@ -139,6 +139,9 @@ class DocumentSuggestionsData(OutputModel):
 
 class StructureSuggestionSummary(OutputModel):
     id: Text | None
+    entity_id: Text | None = None
+    definition_id: Text | None = None
+    responded_at: int | None = None
     section: Text | None
     title: Text | None
     current_values: list[Text | None] = Field(max_length=20)

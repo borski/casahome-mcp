@@ -43,7 +43,7 @@ def test_gate_manifest_matches_sdk_evidence_markers() -> None:
     # The gate is derived from the SDK marker. This pins the expected evidence.
     for case in REMOTE_CASES:
         assert is_unverified(getattr(CasaApi, case.method)) is case.gated
-    assert {case.method for case in GATED_CASES} == {"request_details"} | GATED_METHODS
+    assert {case.method for case in GATED_CASES} == GATED_METHODS
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -336,7 +336,13 @@ def test_adapter_source_never_references_sdk_write_surface() -> None:
     import casahome_mcp
 
     source_root = Path(casahome_mcp.__file__).parent
-    files = sorted(source_root.rglob("*.py"))
+    # Read modules retain the absolute no-write guarantee. Action modules have
+    # their own exact SDK invocation allowlist test, no generic HTTP permitted.
+    files = sorted(
+        path
+        for path in source_root.rglob("*.py")
+        if "actions" not in path.parts and path.name != "action_protocol.py"
+    )
     assert files
     hits = [
         f"{path.relative_to(source_root)}:{number}: {marker}"

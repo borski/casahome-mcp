@@ -55,6 +55,9 @@ class StatusData(OutputModel):
     token_configured: bool
     configured_home_count: int
     allow_unverified_reads: bool
+    allow_actions: bool = False
+    allow_messages: bool = False
+    allow_uploads: bool = False
     refresh_token_rotated: bool
     disabled_features: list[str]
 

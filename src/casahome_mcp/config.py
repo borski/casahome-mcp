@@ -29,6 +29,9 @@ class Settings(BaseModel):
     refresh_token: SecretStr | None = Field(default=None, repr=False)
     homes: tuple[ConfiguredHome, ...] = ()
     allow_unverified_reads: bool = False
+    allow_actions: bool = False
+    allow_messages: bool = False
+    allow_uploads: bool = False
 
     @field_validator("refresh_token")
     @classmethod
@@ -62,9 +65,23 @@ class Settings(BaseModel):
             flag = env.get(setting, "false").lower()
             if flag not in {"true", "false"}:
                 raise ValueError
+            flags: dict[str, bool] = {}
+            for key in ("CASA_ALLOW_ACTIONS", "CASA_ALLOW_MESSAGES", "CASA_ALLOW_UPLOADS"):
+                setting = key
+                value = env.get(key, "false").lower()
+                if value not in {"true", "false"}:
+                    raise ValueError
+                flags[key] = value == "true"
             setting = "CASA_REFRESH_TOKEN"
             raw = env.get(setting, "")
             token = cls.check_token(SecretStr(raw))
-            return cls(refresh_token=token, homes=homes, allow_unverified_reads=flag == "true")
+            return cls(
+                refresh_token=token,
+                homes=homes,
+                allow_unverified_reads=flag == "true",
+                allow_actions=flags["CASA_ALLOW_ACTIONS"],
+                allow_messages=flags["CASA_ALLOW_MESSAGES"],
+                allow_uploads=flags["CASA_ALLOW_UPLOADS"],
+            )
         except (ValidationError, ValueError, TypeError, RecursionError):
             raise ConfigurationError(setting) from None

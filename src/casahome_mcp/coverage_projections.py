@@ -54,6 +54,7 @@ from casahome.models.taxes import PropertyTaxesResponse
 from .coverage_outputs import (
     AIBootstrapData,
     AIHistoryData,
+    AIMessagePartSummary,
     AIMessageSummary,
     AutopilotPlansData,
     CitationSummary,
@@ -566,16 +567,45 @@ def project_notifications(
     ), warnings
 
 
+def _string_field(data: dict[str, object], key: str) -> str | None:
+    value = data.get(key)
+    return value if isinstance(value, str) else None
+
+
 def _ai_message(
     model: CasaAIMessage, include_messages: bool, warnings: list[str]
 ) -> AIMessageSummary:
-    if model.parts:
+    parts: list[AIMessagePartSummary] | None = None
+    if include_messages:
+        parts = []
+        for part in nested(model.parts, warnings):
+            if part.type == "text":
+                parts.append(
+                    AIMessagePartSummary(type="text", text=text(part.text, warnings, 2000))
+                )
+            elif part.type == "data-todo":
+                data = (part.model_extra or {}).get("data")
+                if isinstance(data, dict):
+                    parts.append(
+                        AIMessagePartSummary(
+                            type="data-todo",
+                            todo_id=identity(_string_field(data, "todo_id"), warnings),
+                            title=text(_string_field(data, "title"), warnings),
+                            status=text(_string_field(data, "status"), warnings),
+                        )
+                    )
+                else:
+                    _warn(warnings, "OPAQUE_MESSAGE_PARTS_OMITTED")
+            else:
+                _warn(warnings, "OPAQUE_MESSAGE_PARTS_OMITTED")
+    elif model.parts:
         _warn(warnings, "OPAQUE_MESSAGE_PARTS_OMITTED")
     return AIMessageSummary(
         id=identity(model.id, warnings),
         sender_role=text(model.sender_role, warnings),
         created_at=model.created_at,
         content=text(model.content, warnings, 2000) if include_messages else None,
+        parts=parts,
     )
 
 

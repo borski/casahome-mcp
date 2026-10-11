@@ -329,6 +329,9 @@ def project_document_structure_suggestions(
             model.suggestions,
             lambda item: StructureSuggestionSummary(
                 id=identity(item.id, warnings),
+                entity_id=identity(item.entity_id, warnings),
+                definition_id=identity(item.definition_id, warnings),
+                responded_at=item.responded_at,
                 section=text(item.section, warnings),
                 title=text(item.title, warnings),
                 current_values=[

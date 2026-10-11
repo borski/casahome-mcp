@@ -63,7 +63,7 @@ async def test_narratives_are_opt_in_and_both_channels_match(
                 "question_rounds",
                 "attachments",
                 "member_payment",
-                "parts",
+                "payload",
                 "purchase_link",
                 "event_cursor",
             ):

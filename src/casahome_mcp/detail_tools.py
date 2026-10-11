@@ -105,7 +105,6 @@ def register_detail_tools(server: MCPServer) -> None:
             "Opaque benefit IDs omitted. "
             "No billing amounts, billing interval, next bill, payment or owner details.",
             "casa_get_membership_info",
-            items_unobserved=True,
         ),
         annotations=remote,
         structured_output=True,
@@ -231,7 +230,6 @@ def register_detail_tools(server: MCPServer) -> None:
             "One document's metadata and organization/extraction status. No filenames, owner, URL, "
             "download, analysis or organization actions.",
             "casa_get_document_details",
-            items_unobserved=True,
         ),
         annotations=remote,
         structured_output=True,
@@ -255,7 +253,6 @@ def register_detail_tools(server: MCPServer) -> None:
             "Citation excerpts require "
             "include_excerpts=true. No analysis, work creation, acceptance or dismissal.",
             "casa_list_document_suggestions",
-            items_unobserved=True,
         ),
         annotations=remote,
         structured_output=True,
@@ -264,6 +261,7 @@ def register_detail_tools(server: MCPServer) -> None:
         document_id: PathId,
         ctx: Context[AppContext],
         home_id: HomeId = None,
+        view: Literal["all"] | None = "all",
         include_excerpts: bool = False,
         offset: Offset = 0,
         limit: Limit = 25,
@@ -272,7 +270,7 @@ def register_detail_tools(server: MCPServer) -> None:
             ctx.request_context.lifespan_context,
             home_id,
             "document_suggestions",
-            lambda api, home: api.document_suggestions(home, document_id),
+            lambda api, home: api.document_suggestions(home, document_id, view=view),
             lambda value: project_document_suggestions(
                 value, include_excerpts=include_excerpts, offset=offset, limit=limit
             ),
@@ -284,7 +282,6 @@ def register_detail_tools(server: MCPServer) -> None:
             "and citation page labels. "
             "Excerpts require include_excerpts=true. No inventory edits or responses.",
             "casa_list_document_structure_suggestions",
-            items_unobserved=True,
         ),
         annotations=remote,
         structured_output=True,

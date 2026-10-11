@@ -30,6 +30,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, TextContent
 from pydantic import SecretStr, ValidationError
 
+from casahome_mcp.actions.tools import ACTION_TOOLS
 from casahome_mcp.config import ConfiguredHome, Settings
 from casahome_mcp.outputs import ToolResponse, WeatherData
 from casahome_mcp.projections import project_weather
@@ -109,7 +110,7 @@ REMOTE_CASES = (
         "request_details",
         {"request_id": "request_one-1"},
         ("request_one-1",),
-        gated=True,
+        gated=False,
     ),
     RemoteCase(
         "casa_list_calendar",
@@ -461,7 +462,7 @@ def failed(result: CallToolResult, code: str) -> None:
     if message.startswith("Error executing tool "):
         prefix, separator, message = message.partition(": ")
         assert separator
-        assert prefix.removeprefix("Error executing tool ") in TOOL_NAMES
+        assert prefix.removeprefix("Error executing tool ") in TOOL_NAMES | ACTION_TOOLS
     assert message.startswith(f"{code}:")
     assert result.structured_content is None
 

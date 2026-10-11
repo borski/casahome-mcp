@@ -24,6 +24,7 @@ from test_tools import (
     success,
 )
 
+from casahome_mcp.actions.tools import ACTION_TOOLS
 from casahome_mcp.tools import TOOL_METHODS
 
 INPUT_FIELDS = {
@@ -62,7 +63,7 @@ ITEMS_UNOBSERVED_TOOLS = frozenset(
         "casa_list_packages",
     }
     | ITEMS_UNOBSERVED
-    | {"casa_list_bookable_handyman_tasks", "casa_get_referral_code"}
+    | {"casa_list_bookable_handyman_tasks", "casa_get_referral_code", "casa_list_request_purchases"}
 )
 REQUIRED_FIELDS = {
     "casa_get_inventory_item": {"entity_id"},
@@ -85,9 +86,11 @@ async def test_exact_tool_manifest_schemas_and_annotations(mode: str, enabled: b
     async with Client(harness.server, mode=mode) as client:
         listing = await client.list_tools()
         assert listing.next_cursor is None
-        assert len(listing.tools) == len(TOOL_METHODS) + 2
-        assert {tool.name for tool in listing.tools} == TOOL_NAMES
+        assert len(listing.tools) == len(TOOL_METHODS) + 2 + len(ACTION_TOOLS)
+        assert {tool.name for tool in listing.tools} == TOOL_NAMES | ACTION_TOOLS
         for tool in listing.tools:
+            if tool.name in ACTION_TOOLS:
+                continue  # Separate exact action schemas/annotations tests.
             remote = tool.name not in {"casa_get_status", "casa_list_homes"}
             assert tool.description
             if remote:

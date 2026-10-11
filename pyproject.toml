@@ -1,11 +1,12 @@
 [project]
 name = "casahome-mcp"
 version = "0.1.0"
-description = "Local read-oriented MCP adapter for python-casahome"
+description = "Read-only MCP server for the Casa home membership API"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
+keywords = ["casa", "casahome", "mcp", "model-context-protocol", "home-membership"]
 dependencies = [
     "python-casahome>=0.2.0,<0.3",
     "mcp>=2,<3",
@@ -14,14 +15,16 @@ dependencies = [
     "jsonschema>=4.26,<5",
 ]
 
+[project.urls]
+Homepage = "https://github.com/borski/casahome-mcp"
+Repository = "https://github.com/borski/casahome-mcp"
+Issues = "https://github.com/borski/casahome-mcp/issues"
+
 [project.scripts]
 casahome-mcp = "casahome_mcp.__main__:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6", "mypy>=1.10", "types-jsonschema"]
-
-[tool.uv.sources]
-python-casahome = { git = "https://github.com/borski/python-casahome", tag = "v0.2.0" }
 
 [build-system]
 requires = ["hatchling"]

@@ -29,20 +29,26 @@ token. Read-only means no Casa writes, not zero POSTs.
 
 ## Install
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.11+. Run directly from PyPI with [uv](https://docs.astral.sh/uv/):
 
 ```sh
-uv tool install git+https://github.com/borski/casahome-mcp
+uvx casahome-mcp
 ```
 
-This installs a `casahome-mcp` command. Or run from a clone:
+Or install a persistent `casahome-mcp` command with uv:
 
 ```sh
-git clone https://github.com/borski/casahome-mcp
-cd casahome-mcp
-uv sync --locked
-uv run --locked casahome-mcp
+uv tool install casahome-mcp
 ```
+
+With pip, install into an activated virtual environment:
+
+```sh
+pip install casahome-mcp
+```
+
+These commands install `casahome-mcp` and its `python-casahome>=0.2.0,<0.3`
+dependency from PyPI. No Git checkout is needed.
 
 `python -m casahome_mcp` is an equivalent entry point. The command starts a
 stdio server that waits for an MCP host. It isn't an interactive shell.
@@ -81,7 +87,8 @@ same command, arguments and environment in their own config format.
 {
   "mcpServers": {
     "casahome": {
-      "command": "casahome-mcp",
+      "command": "uvx",
+      "args": ["casahome-mcp"],
       "env": {
         "CASA_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN",
         "CASA_HOMES_JSON": "[{\"id\":\"11111111-1111-4111-8111-111111111111\",\"label\":\"Home\"}]",
@@ -92,16 +99,23 @@ same command, arguments and environment in their own config format.
 }
 ```
 
-Use an absolute path to `casahome-mcp` if your client doesn't inherit your shell
-`PATH`. To keep the token out of the config file, inject it with a secrets tool
-of your choice. For example, with the 1Password CLI and a gitignored `.env`
-containing `CASA_REFRESH_TOKEN=op://YOUR_VAULT/YOUR_ITEM/credential`:
+Use an absolute path to `uvx` if your client doesn't inherit your shell `PATH`.
+For a persistent installation, use `"command": "casahome-mcp"` and omit `args`.
+Use an absolute path to that executable when needed.
+
+Keep credentials local. Replace the token placeholder only in your local client
+configuration, never in command arguments or committed files. To keep the token
+out of the config file, inject it with a secrets tool of your choice. For example,
+with the 1Password CLI and a gitignored `.env` containing
+`CASA_REFRESH_TOKEN=op://YOUR_VAULT/YOUR_ITEM/credential`:
 
 ```sh
-op run --env-file=.env -- casahome-mcp
+op run --env-file=.env -- uvx casahome-mcp
 ```
 
-`.env.example` shows the expected keys with fake values.
+In this example, `op run` resolves the secret and injects the environment.
+The server itself doesn't read `.env`. `.env.example` shows the expected keys
+with fake values.
 
 ### Home selection
 
@@ -269,13 +283,19 @@ Additional safeguards:
 
 ## Development
 
+Clone the repository for development:
+
 ```sh
+git clone https://github.com/borski/casahome-mcp
+cd casahome-mcp
 uv sync --locked
 uv run --locked pytest -q
 uv run --locked ruff check .
 uv run --locked ruff format --check .
 uv run --locked mypy src tests
 ```
+
+Run the server from the clone with `uv run --locked casahome-mcp`.
 
 Tests use synthetic data and typed fakes of the SDK. They never contact Casa or
 Firebase. Process tests launch the real entry point over stdio with a socket

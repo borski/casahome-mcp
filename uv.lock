@@ -312,7 +312,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.26,<5" },
     { name = "mcp", specifier = ">=2,<3" },
     { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "python-casahome", git = "https://github.com/borski/python-casahome?tag=v0.2.0" },
+    { name = "python-casahome", specifier = ">=0.2.0,<0.3" },
 ]
 
 [package.metadata.requires-dev]
@@ -1467,10 +1467,14 @@ wheels = [
 [[package]]
 name = "python-casahome"
 version = "0.2.0"
-source = { git = "https://github.com/borski/python-casahome?tag=v0.2.0#cf1bc2619ab8d0a54d2bb213b8d3b6070375a35e" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/60/e9/f0d0e67d5a13f7f5eb13c2e8ff81a0f969d0137a9b1de99fa0a6d74ac336/python_casahome-0.2.0.tar.gz", hash = "sha256:624357e679839c94513b01ebc81378a29f5933279e59165c535e93c8bbb42006", size = 183753, upload-time = "2026-10-11T09:06:12.094Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/4f/802a1c9cde58738cffa599ff1c259be7ba3b88a61c2dcb8ff81ad55fcaf9/python_casahome-0.2.0-py3-none-any.whl", hash = "sha256:e63f38600bda01be21b77264b7bc2d08135392d26a0d234a5702ddef0c6af8a1", size = 59150, upload-time = "2026-10-11T09:06:10.659Z" },
 ]
 
 [[package]]

@@ -561,6 +561,7 @@ def test_inventory_rooms_keep_story_context_and_source_order() -> None:
         "story_id": "story-two",
         "story_name": "First floor",
         "floor_number": -1,
+        "room_type_id": None,
     }
     assert warnings == [COMPLETENESS]
     _assert_private(data)

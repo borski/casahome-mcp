@@ -73,6 +73,7 @@ _URL_VALUE = re.compile(
     r"|(?:^|\s)(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b",
     re.IGNORECASE,
 )
+_ROOM_TYPE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 
 class ProjectionError(Exception):
@@ -247,7 +248,18 @@ def _room(model: HomeRoom, story: HomeStory, warnings: list[str]) -> RoomSummary
         story_id=story.id,
         story_name=_clip(story.name, 256, warnings),
         floor_number=story.floor_number,
+        room_type_id=_room_type_id(model.room_type_id, warnings),
     )
+
+
+def _room_type_id(value: str | None, warnings: list[str]) -> str | None:
+    """Pass through only a safe room-type selector, never odd upstream text."""
+    if value is None:
+        return None
+    if _ROOM_TYPE_ID.fullmatch(value):
+        return value
+    _warn(warnings, "ROOM_TYPE_ID_OMITTED")
+    return None
 
 
 def project_inventory(

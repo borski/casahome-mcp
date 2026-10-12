@@ -135,7 +135,7 @@ authenticates and authorizes the account.
 
 ## Tools
 
-102 tools: 57 read/local tools plus 43 action prepares, execute and cancel.
+104 tools: 57 read/local tools plus 45 action prepares, execute and cancel.
 55 remote reads use 54 SDK methods. "Gated" read tools
 are disabled unless `CASA_ALLOW_UNVERIFIED_READS=true`. Gating comes from the
 SDK's evidence marker (`casahome.is_unverified`), so it changes automatically
@@ -155,7 +155,7 @@ by either unverified gate (reads and actions) in `disabled_features`.
 |---|---|---|
 | `casa_get_badge_counts` | | Unread counts per feature |
 | `casa_get_weather` | | Home weather |
-| `casa_list_inventory` | | Rooms or entities, with optional exact room/category filters |
+| `casa_list_inventory` | | Rooms or entities, with optional exact room/category filters. Rooms include a safe `room_type_id` when present. |
 | `casa_get_inventory_item` | | One entity by UUID from the fetched inventory |
 | `casa_get_inventory_service_history` | | Service history for an entity, room or home |
 | `casa_list_inventory_enums` | | Options for a property `enum_type` key, such as `light_fixture_type` |
@@ -255,9 +255,30 @@ They never perform a Casa write:
 | `casa_prepare_upload_document` | One explicit file snapshot, additionally requires UPLOADS |
 | `casa_prepare_delete_todo` | Permanent deletion, no related-work cleanup |
 | `casa_prepare_update_entity_model` | Nonblank model name with empty props only |
+| `casa_prepare_update_entity_make_model` | Make and/or model. One canonical UUID or name per supplied side, at least one side. Empty props only. |
+| `casa_prepare_rename_room` | Existing room UUID, required `room_type_id` and name. Both fields are sent, no creation. |
 | `casa_prepare_respond_to_document_structure_suggestion` | Required `accepted` decision and exact `expected_values` |
 | `casa_prepare_add_mailbox_recipient` | Explicit first and last names only, each 1 to 256 characters. No business/kind/primary fields. |
 | `casa_prepare_update_mailbox_auto_archive` | Required `mailbox_auto_archive_days`, exactly integer `30` or explicit `null` only |
+
+Make/model and rename prepares currently require ACTIONS only, following the SDK's
+evidence marker. If either method becomes unverified, its gate, description and
+preview warning follow that marker. Make/model names and room names are 1 to 256
+characters, nonblank, without control characters. SDK body validation runs before
+a token is allocated. Names are sent as given, without trimming. Make/model names
+are matched against Casa's catalog and may be stored under different canonical
+names or rejected as unknown products. Read inventory to reconcile the result.
+
+The new make/model tool preserves the old model-name-only tool. Omit unused sides.
+Each supplied side needs exactly one of `make_id`/`make_name` or
+`model_id`/`model_name`. Explicit nulls, clear selections and property updates aren't
+accepted. Its preview includes exactly the selections sent and `props: []`.
+Entity, room and catalog-selection UUIDs must be canonical dashed strings,
+case-insensitive. Room-type IDs instead use one safe ASCII segment
+(`A-Z`, `a-z`, `0-9`, `_`, `-`), 1 to 128 characters. The room read projection uses
+the same format, preserves the exact ID and omits unsafe text with
+`ROOM_TYPE_ID_OMITTED`. Pass the room's current type to preserve it during rename.
+An absent or omitted type isn't guessed. Both name and type are always replaced.
 
 Both mailbox prepares require ACTIONS only. Recipient previews preserve the exact
 first and last names and warn that adding a recipient may change account mail
@@ -323,11 +344,20 @@ rechecks home, flags and authentication configuration. It atomically consumes th
 token before any await or SDK call. Concurrent or repeated execution can't send twice.
 Shutdown clears all pending previews.
 
-SDK failures and timeouts return `outcome="UNKNOWN"`. A write or an earlier upload
+SDK failures and timeouts normally return `outcome="UNKNOWN"`. A write or an earlier upload
 step may already have happened. The token stays consumed. Never automatically retry,
 prepare a replacement or perform follow-up actions. Read the relevant resource to
 reconcile an uncertain outcome. Invalid, expired, cancelled and replayed tokens use
 one private error. Outputs contain status only, not raw SDK models or response text.
+
+The only classified rejection is SDK `CasaApiError` with HTTP status exactly `400`
+and code exactly `CATALOG_MODEL_UNVERIFIED`, during `update_entity_model` or
+`update_entity_make_model`. It returns `outcome="REJECTED_UNKNOWN_PRODUCT"` with a
+static warning. The token stays consumed, and no retry, replacement preview or
+follow-up write occurs. **Rejection doesn't prove complete rollback. Reconcile
+inventory before any new retry.** The same code from another method, another HTTP
+status or any other error remains `UNKNOWN`. Upstream display text, request IDs and
+response bodies are never returned or logged.
 
 Examples of prepare inputs. None authorizes execution by itself:
 

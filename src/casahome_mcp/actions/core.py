@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 from typing import Any, Protocol, TypeVar
 
+from casahome.exceptions import CasaApiError
 from mcp.server import MCPServer
 from mcp.server.mcpserver.utilities.func_metadata import FuncMetadata, func_metadata
 from mcp.types import ToolAnnotations
@@ -12,7 +13,7 @@ from pydantic import BaseModel, JsonValue, ValidationError
 from ..errors import failure
 from ..runtime import AppContext
 from ..tools import resolve_home
-from .models import ActionResult
+from .models import CATALOG_REJECTION_WARNING, ActionResult
 from .policy import ACTION_METHODS, UNVERIFIED_CONTRACT_WARNING, action_unverified
 from .store import CONSENT_WARNING, Group, Invocation, action_error
 
@@ -146,7 +147,21 @@ async def execute(app: AppContext, token: str, confirmed: bool) -> ActionResult:
     try:
         async with asyncio.timeout(app.deadline_seconds), app.semaphore:
             return await pending.invoke(api, pending.home_id)
-    except Exception:
+    except Exception as error:
+        # Only this precise publish rejection is classified. It isn't evidence
+        # that earlier server-side changes were completely rolled back.
+        if (
+            pending.operation in {"update_entity_model", "update_entity_make_model"}
+            and isinstance(error, CasaApiError)
+            and error.status == 400
+            and error.code == "CATALOG_MODEL_UNVERIFIED"
+        ):
+            return ActionResult(
+                outcome="REJECTED_UNKNOWN_PRODUCT",
+                operation=pending.operation,
+                home_id=pending.home_id,
+                warning=CATALOG_REJECTION_WARNING,
+            )
         # Even response parse failures can follow a completed write. No retries,
         # reusable token, raw exception text or raw upstream response.
         return ActionResult(

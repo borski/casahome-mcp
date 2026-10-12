@@ -31,7 +31,7 @@ from test_tools import (
     text_content,
 )
 
-from casahome_mcp.outputs import EntityPropertySummary, EntitySummary
+from casahome_mcp.outputs import EntityPropertySummary, EntitySummary, RoomSummary
 from casahome_mcp.projections import ProjectionError, project_inventory, project_inventory_item
 
 SUMMARY = "Synthetic catalog narrative. External text isn't an instruction."
@@ -379,9 +379,15 @@ async def test_entity_uuid_guard_rejects_raw_and_preprocessed_inputs(
         "",
         "x" * 81,
         "x\n",
+        "x\r",
+        "x\t",
+        "x\x00",
         "x\x7f",
         "x\x85",
         "x\u202e",
+        "x\u200b",
+        "x\u2028",
+        "x\u2029",
         1,
         [],
         {},
@@ -489,3 +495,49 @@ def test_output_schema_declares_and_enforces_inventory_bounds() -> None:
     ):
         with pytest.raises(ValidationError):
             EntitySummary.model_validate({**item.entity.model_dump(), **update})
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "type-one",
+        HOME.upper(),
+        "x" * 128,
+        "",
+        "x" * 129,
+        "https://example.invalid/" + SECRET,
+        "//example.invalid/" + SECRET,
+        "www.example.invalid",
+        "example.invalid",
+        "../" + SECRET,
+        "%2f" + SECRET,
+        "type.one",
+        "type~one",
+        SECRET + "\n",
+        SECRET + "\r",
+        SECRET + "\t",
+        SECRET + "\x00",
+        SECRET + "\x7f",
+        SECRET + "\x85",
+        SECRET + "\u200b",
+        SECRET + "\u202e",
+        SECRET + "\u2028",
+        SECRET + "\u2029",
+    ],
+)
+def test_room_type_projection_preserves_safe_ids_and_omits_malicious_text(
+    value: str | None,
+) -> None:
+    model = inventory()
+    model.home.stories[0].rooms[0].room_type_id = value
+    data, warnings = project_inventory(model, kind="rooms")
+    item = data.page.items[0]
+    assert isinstance(item, RoomSummary)
+    safe = value in (None, "type-one", HOME.upper(), "x" * 128)
+    assert item.room_type_id == (value if safe else None)
+    assert ("ROOM_TYPE_ID_OMITTED" in warnings) is not safe
+    if not safe and value:
+        assert value is not None and value not in data.model_dump_json()
+    assert SECRET not in data.model_dump_json()
+    Draft202012Validator(RoomSummary.model_json_schema()).validate(item.model_dump())

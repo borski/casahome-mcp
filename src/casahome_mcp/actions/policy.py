@@ -24,6 +24,8 @@ ACTION_METHODS = frozenset(
         "upload_document",
         "delete_todo",
         "update_entity_model",
+        "update_entity_make_model",
+        "rename_room",
         "respond_to_document_structure_suggestion",
         "add_mailbox_recipient",
         "update_mailbox_auto_archive",

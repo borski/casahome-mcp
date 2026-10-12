@@ -17,7 +17,7 @@ from mcp.server.mcpserver.utilities.func_metadata import FuncMetadata
 from mcp.types import CallToolResult, TextContent
 from pydantic import ValidationError
 
-from .actions.models import CONTENT_FIELDS
+from .actions.models import CATALOG_SELECTION_FIELDS, CONTENT_FIELDS
 
 
 def safe_strings(value: object, content_fields: set[str], field: str = "") -> bool:
@@ -87,6 +87,16 @@ def input_guard(
                 isinstance(room_ids, list) and all(canonical_uuid(value) for value in room_ids)
             ):
                 return refusal()
+            selection_fields = CATALOG_SELECTION_FIELDS.get(name, frozenset())
+            if selection_fields:
+                # Omission isn't a clear operation. Explicit nulls are refused,
+                # and UUID selection IDs stay strings before union preprocessing.
+                for key in selection_fields:
+                    if key in arguments and arguments[key] is None:
+                        return refusal()
+                for key in ("make_id", "model_id"):
+                    if key in arguments and not canonical_uuid(arguments[key]):
+                        return refusal()
             # Nullable exact filters must not be reinterpreted as JSON objects,
             # arrays or null by MCP's union preprocessing. Refuse ambiguous input.
             for key in (
@@ -122,6 +132,7 @@ def input_guard(
                 "package_pickup_general_instructions",
                 "make_id",
                 "model_id",
+                *selection_fields,
                 "bulb_entity_type_id",
             ):
                 value = arguments.get(key)

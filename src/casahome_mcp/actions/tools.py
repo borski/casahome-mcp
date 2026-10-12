@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
 
-from casahome.models.entity_publish import EntityModelName, SaveAndPublishEntityRequest
+from casahome.models.entity_publish import SaveAndPublishEntityRequest
 from casahome.models.mail_workflows import AddMailboxRecipientRequest, MailboxAutoArchiveRequest
 from casahome.models.verified_writes import (
     AnswerTodoQuestionRequest,
@@ -38,6 +38,7 @@ from .core import (
     PREPARE,
     UPLOAD_PREPARE,
     authorize,
+    build,
     description,
     execute,
     make_action_tool,
@@ -45,6 +46,7 @@ from .core import (
     preview_body,
     result,
 )
+from .inventory_tools import CATALOG_MATCH_RISK, register_inventory_tools
 from .models import (
     ActionResult,
     Answer,
@@ -169,6 +171,7 @@ def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
     validators: dict[str, FuncMetadata] = {}
     action_tool = make_action_tool(server, validators)
     register_workflow_tools(action_tool)
+    register_inventory_tools(action_tool)
 
     @action_tool(
         description=description(
@@ -599,7 +602,7 @@ def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
     @action_tool(
         description=description(
             "Publish model.name with empty props. "
-            "No make/catalog IDs, properties or clear semantics."
+            "No make/catalog IDs, properties or clear semantics. " + CATALOG_MATCH_RISK
         ),
         annotations=PREPARE,
         structured_output=True,
@@ -610,9 +613,7 @@ def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
         ctx: Context[AppContext],
         home_id: HomeId = None,
     ) -> dict[str, JsonValue]:
-        if not model_name.strip():
-            raise failure("INVALID_ARGUMENT")
-        body = SaveAndPublishEntityRequest(model=EntityModelName(name=model_name), props=[])
+        body = build(SaveAndPublishEntityRequest, {"model": {"name": model_name}, "props": []})
 
         async def invoke(api: CasaActionsProtocol, home: str) -> ActionResult:
             await api.update_entity_model(home, entity_id, model_name)
@@ -622,7 +623,11 @@ def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
             ctx.request_context.lifespan_context,
             home_id,
             "update_entity_model",
-            {"entity_id": entity_id, **preview_body(body)},
+            {
+                "entity_id": entity_id,
+                **body.model_dump(mode="json", exclude_none=True),
+                "risk": CATALOG_MATCH_RISK,
+            },
             invoke,
         )
 
@@ -699,8 +704,9 @@ def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
             "Execute one prepared action once. Show the exact preview and obtain specific "
             "user approval first. confirmed=True isn't proof of consent. Operator gates and "
             "home allowlist are rechecked. False makes zero calls and preserves the token. "
-            "UNKNOWN means "
-            "the action may have happened. Never automatically retry or prepare a replacement."
+            "UNKNOWN means the action may have happened. REJECTED_UNKNOWN_PRODUCT doesn't "
+            "prove complete rollback. Reconcile before any new retry. "
+            "Never automatically retry or prepare a replacement."
         ),
         annotations=EXECUTE,
         structured_output=True,

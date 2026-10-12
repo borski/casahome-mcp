@@ -142,6 +142,19 @@ class CasaActionsProtocol(Protocol):
     async def update_entity_model(
         self, home_id: str, entity_id: str, model_name: str
     ) -> SaveAndPublishEntityResponse: ...
+    async def update_entity_make_model(
+        self,
+        home_id: str,
+        entity_id: str,
+        *,
+        make_id: str | None = None,
+        make_name: str | None = None,
+        model_id: str | None = None,
+        model_name: str | None = None,
+    ) -> SaveAndPublishEntityResponse: ...
+    async def rename_room(
+        self, home_id: str, room_id: str, *, room_type_id: str, name: str
+    ) -> BasicMessageResponse: ...
     async def respond_to_document_structure_suggestion(
         self,
         home_id: str,

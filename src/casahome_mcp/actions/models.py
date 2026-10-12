@@ -17,6 +17,11 @@ CONTENT_FIELDS = {
         "package_pickup_general_instructions",
     },
 }
+CATALOG_SELECTION_FIELDS = {
+    "casa_prepare_update_entity_make_model": frozenset(
+        {"make_id", "make_name", "model_id", "model_name"}
+    ),
+}
 
 PathId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,128}$", strict=True)]
 Content = Annotated[str, Field(min_length=1, max_length=10_000, strict=True)]
@@ -25,6 +30,7 @@ StrictFlag = Annotated[bool, Field(strict=True)]
 Index = Annotated[int, Field(ge=0, le=10_000, strict=True)]
 RecipientName = Annotated[str, Field(min_length=1, max_length=256, strict=True)]
 Label = Annotated[str, Field(min_length=1, max_length=1024, strict=True)]
+CatalogName = Annotated[str, Field(min_length=1, max_length=256, strict=True)]
 Emoji = Annotated[str, Field(min_length=1, max_length=16, strict=True)]
 DocumentDate = Annotated[str, Field(min_length=1, max_length=64, strict=True)]
 TrackingNumber = Annotated[str, Field(pattern=r"^[A-Za-z0-9-]{1,64}$", strict=True)]
@@ -140,10 +146,20 @@ class PropertyUpdate(InputModel):
 PropertyUpdates = Annotated[list[PropertyUpdate], Field(max_length=50)]
 
 
+CATALOG_REJECTION_WARNING = (
+    "Rejection doesn't prove complete rollback. Reconcile inventory before any new retry. "
+    "Never automatically retry or prepare a replacement."
+)
+
+
 class ActionResult(InputModel):
-    outcome: Literal["SUCCEEDED", "UNKNOWN", "NOT_EXECUTED", "CANCELLED"]
+    outcome: Literal[
+        "SUCCEEDED", "UNKNOWN", "REJECTED_UNKNOWN_PRODUCT", "NOT_EXECUTED", "CANCELLED"
+    ]
     operation: str
     home_id: str
+    # Static safety guidance only, never upstream error text.
+    warning: str | None = None
     # Status only. Never forward raw SDK response text, URLs or models.
     needs_support_confirmation: bool | None = None
     # Tracking-number validation status only. Carrier IDs are safe path segments.

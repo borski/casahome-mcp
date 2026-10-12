@@ -87,6 +87,8 @@ CASES: tuple[tuple[str, dict[str, object]], ...] = (
     ("create_todo_result", {"content": "Line one\nLine two"}),
     ("delete_todo", {"todo_id": "todo-one"}),
     ("update_entity_model", {"entity_id": ENTITY, "model_name": "New model"}),
+    ("update_entity_make_model", {"entity_id": ENTITY, "make_id": HOME, "model_name": "Model"}),
+    ("rename_room", {"room_id": ENTITY, "room_type_id": "type-one", "name": "Room"}),
     ("add_mailbox_recipient", {"first_name": "Synthetic", "last_name": "Recipient"}),
     ("update_mailbox_auto_archive", {"mailbox_auto_archive_days": 30}),
     (

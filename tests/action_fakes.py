@@ -291,6 +291,36 @@ class FakeActions(CasaActionsProtocol):
             }
         )
 
+    async def update_entity_make_model(
+        self,
+        home_id: str,
+        entity_id: str,
+        *,
+        make_id: str | None = None,
+        make_name: str | None = None,
+        model_id: str | None = None,
+        model_name: str | None = None,
+    ) -> SaveAndPublishEntityResponse:
+        await self.record(
+            "update_entity_make_model", home_id, entity_id, make_id, make_name, model_id, model_name
+        )
+        return SaveAndPublishEntityResponse.model_validate(
+            {
+                "entity_id": entity_id,
+                "status": "published",
+                "make": {"id": "make-one", "name": SECRET},
+                "model": {"id": "model-one", "name": SECRET},
+                "identity": {"state": "verified", "candidates": [{"password": SECRET}]},
+                "url": "https://example.invalid/" + SECRET,
+            }
+        )
+
+    async def rename_room(
+        self, home_id: str, room_id: str, *, room_type_id: str, name: str
+    ) -> BasicMessageResponse:
+        await self.record("rename_room", home_id, room_id, room_type_id, name)
+        return BasicMessageResponse(message=SECRET)
+
     async def respond_to_document_structure_suggestion(
         self,
         home_id: str,

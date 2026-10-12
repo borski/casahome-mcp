@@ -53,8 +53,8 @@ async def test_canonical_tool_schemas_and_annotations(mode: str) -> None:
     h = harness()
     async with Client(h.server, mode=mode) as client:
         listing = await client.list_tools()
-    assert len(listing.tools) == 102
-    assert len(ACTION_METHODS) == 43 and len(ACTION_TOOLS) == 45
+    assert len(listing.tools) == 104
+    assert len(ACTION_METHODS) == 45 and len(ACTION_TOOLS) == 47
     for tool in listing.tools:
         if tool.name not in {RECIPIENT_TOOL, ARCHIVE_TOOL}:
             continue

@@ -92,6 +92,9 @@ class RoomSummary(OutputModel):
     story_id: str
     story_name: str
     floor_number: int
+    # Required for existing-room name/type updates, which send both fields.
+    # None when Casa omits it or it isn't one safe path segment.
+    room_type_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,128}$")
 
 
 class EntityPropertySummary(OutputModel):

@@ -1,6 +1,6 @@
 [project]
 name = "casahome-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "Casa MCP reads and explicitly confirmed, default-deny actions"
 readme = "README.md"
 license = "MIT"

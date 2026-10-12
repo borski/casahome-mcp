@@ -58,10 +58,12 @@ REMOTE_TOOLS = (
 GATED_TOOLS = DETAIL_GATED_TOOLS
 INHERITED_SENTINEL = "synthetic-inherited-secret-must-not-reach-child"
 FORBIDDEN_INHERITED_KEYS = (
+    "CASA_MODE",
     "CASA_REFRESH_TOKEN",
     "CASA_HOMES_JSON",
     "CASA_ALLOW_UNVERIFIED_READS",
     "CASA_ALLOW_ACTIONS",
+    "CASA_ALLOW_UNVERIFIED_ACTIONS",
     "CASA_ALLOW_MESSAGES",
     "CASA_ALLOW_UPLOADS",
     "CASA_UNKNOWN_SETTING",
@@ -227,6 +229,7 @@ def _guarded_child(tmp_path: Path) -> GuardedChild:
             "TEST_EGRESS_LOADED": str(loaded),
             "TEST_EGRESS_VIOLATIONS": str(violations),
             "CASA_HOMES_JSON": json.dumps([{"id": HOME_ID, "label": HOME_LABEL}]),
+            "CASA_MODE": "read_only",
             "CASA_ALLOW_UNVERIFIED_READS": "false",
         }
     )
@@ -357,10 +360,16 @@ def test_child_environment_excludes_inherited_credentials_and_settings(
     assert INHERITED_SENTINEL not in child.env.values()
     assert "CASA_REFRESH_TOKEN" not in child.env
     assert child.env["CASA_ALLOW_UNVERIFIED_READS"] == "false"
+    assert child.env["CASA_MODE"] == "read_only"
     assert child.env["PYTHONPATH"] == str(tmp_path / "egress-guard")
     assert Path(child.env["HOME"]).parent == tmp_path
     for name in FORBIDDEN_INHERITED_KEYS:
-        if name not in {"CASA_HOMES_JSON", "CASA_ALLOW_UNVERIFIED_READS", "PYTHONPATH"}:
+        if name not in {
+            "CASA_HOMES_JSON",
+            "CASA_MODE",
+            "CASA_ALLOW_UNVERIFIED_READS",
+            "PYTHONPATH",
+        }:
             assert name not in child.env
 
 
@@ -395,6 +404,7 @@ async def test_real_stdio_smoke_and_clean_eof(
             assert status["warnings"] == []
             data = _object(status["data"])
             assert isinstance(data["version"], str) and data["version"]
+            assert data["mode"] == "read_only"
             assert data["token_configured"] is (token is not None)
             assert data["configured_home_count"] == 1
             assert data["allow_unverified_reads"] is False

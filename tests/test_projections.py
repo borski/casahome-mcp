@@ -439,6 +439,7 @@ def test_nested_envelope_extras_and_wrong_data_are_rejected() -> None:
 def test_local_status_and_home_contracts() -> None:
     status = StatusData(
         version="synthetic",
+        mode="read_only",
         token_configured=False,
         configured_home_count=1,
         allow_unverified_reads=False,
@@ -447,6 +448,7 @@ def test_local_status_and_home_contracts() -> None:
     )
     assert set(status.model_dump()) == {
         "version",
+        "mode",
         "token_configured",
         "configured_home_count",
         "allow_unverified_reads",

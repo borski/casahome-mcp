@@ -114,7 +114,7 @@ def test_sdk_write_coverage_and_read_manifest_stay_separate() -> None:
     for operation in ("update_entity_make_model", "rename_room"):
         assert not is_unverified(getattr(CasaApi, operation))
         assert not action_unverified(operation)
-        assert "casa_prepare_" + operation not in gated_action_tools(Settings())
+        assert "casa_prepare_" + operation not in gated_action_tools(Settings(allow_actions=True))
 
 
 @pytest.mark.parametrize("mode", MODES)

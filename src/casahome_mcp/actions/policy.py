@@ -69,6 +69,9 @@ ACTION_TOOLS = frozenset(f"casa_prepare_{method}" for method in ACTION_METHODS) 
     "casa_cancel_action",
 }
 
+MESSAGE_METHODS = frozenset({"send_ai_message", "send_request_message"})
+UPLOAD_METHODS = frozenset({"upload_document"})
+
 UNVERIFIED_CONTRACT_WARNING = (
     "UNVERIFIED_CONTRACT: reconstructed from the app, not yet confirmed against Casa. "
     "May fail or behave differently."
@@ -82,7 +85,17 @@ def action_unverified(method_name: str) -> bool:
 
 
 def gated_action_tools(settings: Settings) -> list[str]:
-    """Prepare tools the unverified-actions gate currently blocks."""
-    if settings.allow_unverified_actions:
-        return []
-    return sorted(f"casa_prepare_{name}" for name in ACTION_METHODS if action_unverified(name))
+    """Effectively disabled actions under the same operator gates as authorize.
+
+    Cancellation is local and remains available even without action permission.
+    """
+    if not settings.allow_actions:
+        return sorted(ACTION_TOOLS - {"casa_cancel_action"})
+    blocked: set[str] = set()
+    if not settings.allow_messages:
+        blocked.update(MESSAGE_METHODS)
+    if not settings.allow_uploads:
+        blocked.update(UPLOAD_METHODS)
+    if not settings.allow_unverified_actions:
+        blocked.update(name for name in ACTION_METHODS if action_unverified(name))
+    return sorted(f"casa_prepare_{name}" for name in blocked)

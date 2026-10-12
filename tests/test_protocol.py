@@ -24,8 +24,9 @@ from test_tools import (
     success,
 )
 
-from casahome_mcp.actions.policy import gated_action_tools
+from casahome_mcp.actions.policy import ACTION_METHODS, action_unverified, gated_action_tools
 from casahome_mcp.actions.tools import ACTION_TOOLS
+from casahome_mcp.config import Settings
 from casahome_mcp.tools import TOOL_METHODS
 
 INPUT_FIELDS = {
@@ -234,6 +235,7 @@ async def test_local_tools_never_authenticate_or_discover_homes(
         assert data["token_configured"] is token
         assert data["configured_home_count"] == len(homes)
         assert data["allow_unverified_reads"] is enabled
+        assert data["mode"] == "read_only"
         assert data["refresh_token_rotated"] is False
         assert "authenticated" not in data
         disabled = sequence(data["disabled_features"])
@@ -253,3 +255,62 @@ async def test_local_tools_never_authenticate_or_discover_homes(
         }
         assert harness.fake.calls == []
     assert harness.entries == harness.exits == 1
+
+
+@pytest.mark.parametrize(
+    ("profile", "override"),
+    [
+        ("read_only", None),
+        ("verified_actions", None),
+        ("full", None),
+        ("full", ("CASA_ALLOW_ACTIONS", "false")),
+        ("full", ("CASA_ALLOW_MESSAGES", "false")),
+        ("full", ("CASA_ALLOW_UPLOADS", "false")),
+        ("full", ("CASA_ALLOW_UNVERIFIED_ACTIONS", "false")),
+        ("read_only", ("CASA_ALLOW_ACTIONS", "true")),
+        ("read_only", ("CASA_ALLOW_UNVERIFIED_ACTIONS", "true")),
+        ("read_only", ("CASA_ALLOW_MESSAGES", "true")),
+        ("read_only", ("CASA_ALLOW_UPLOADS", "true")),
+        ("read_only", ("CASA_ALLOW_UNVERIFIED_READS", "true")),
+    ],
+)
+async def test_status_reports_profile_and_effectively_disabled_tools(
+    profile: str, override: tuple[str, str] | None
+) -> None:
+    environment = {"CASA_MODE": profile}
+    if override is not None:
+        environment[override[0]] = override[1]
+    configured = Settings.from_env(environment)
+    harness = Harness(configured)
+    async with Client(harness.server) as client:
+        data = mapping(success(await client.call_tool("casa_get_status"))["data"])
+    assert data["mode"] == profile
+    for flag in (
+        "allow_unverified_reads",
+        "allow_actions",
+        "allow_unverified_actions",
+        "allow_messages",
+        "allow_uploads",
+    ):
+        assert data[flag] is getattr(configured, flag)
+    if not configured.allow_actions:
+        disabled_actions: set[str] = set(ACTION_TOOLS - {"casa_cancel_action"})
+    else:
+        disabled_actions = {
+            f"casa_prepare_{method}"
+            for method in ACTION_METHODS
+            if (
+                (
+                    method in {"send_ai_message", "send_request_message"}
+                    and not configured.allow_messages
+                )
+                or (method == "upload_document" and not configured.allow_uploads)
+                or (action_unverified(method) and not configured.allow_unverified_actions)
+            )
+        }
+    assert gated_action_tools(configured) == sorted(disabled_actions)
+    expected = disabled_actions | (set() if configured.allow_unverified_reads else set(GATED_TOOLS))
+    disabled = sequence(data["disabled_features"])
+    assert set(disabled) == expected
+    assert len(disabled) == len(expected)
+    assert "casa_cancel_action" not in disabled

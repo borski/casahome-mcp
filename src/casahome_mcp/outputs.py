@@ -52,6 +52,7 @@ class Page(OutputModel, Generic[T]):
 
 class StatusData(OutputModel):
     version: str
+    mode: Literal["read_only", "verified_actions", "full"]
     token_configured: bool
     configured_home_count: int
     allow_unverified_reads: bool

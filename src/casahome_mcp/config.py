@@ -3,6 +3,7 @@
 import json
 import os
 from collections.abc import Mapping
+from typing import Literal, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
@@ -11,6 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, f
 class ConfigurationError(Exception):
     def __init__(self, setting: str) -> None:
         super().__init__(f"Invalid configuration: {setting}.")
+
+
+Mode = Literal["read_only", "verified_actions", "full"]
 
 
 class ConfiguredHome(BaseModel):
@@ -28,6 +32,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True, hide_input_in_errors=True)
     refresh_token: SecretStr | None = Field(default=None, repr=False)
     homes: tuple[ConfiguredHome, ...] = ()
+    mode: Mode = "read_only"
     allow_unverified_reads: bool = False
     allow_actions: bool = False
     allow_messages: bool = False
@@ -62,19 +67,24 @@ class Settings(BaseModel):
             homes = tuple(ConfiguredHome.model_validate(entry) for entry in entries)
             # Check list constraints here so diagnostics name the right setting.
             cls.check_homes(homes)
-            setting = "CASA_ALLOW_UNVERIFIED_READS"
-            flag = env.get(setting, "false").lower()
-            if flag not in {"true", "false"}:
+            setting = "CASA_MODE"
+            mode = env.get(setting, "read_only").lower()
+            if mode not in {"read_only", "verified_actions", "full"}:
                 raise ValueError
+            # Explicit granular flags replace the selected profile's value, even when false.
             flags: dict[str, bool] = {}
             for key in (
+                "CASA_ALLOW_UNVERIFIED_READS",
                 "CASA_ALLOW_ACTIONS",
+                "CASA_ALLOW_UNVERIFIED_ACTIONS",
                 "CASA_ALLOW_MESSAGES",
                 "CASA_ALLOW_UPLOADS",
-                "CASA_ALLOW_UNVERIFIED_ACTIONS",
             ):
                 setting = key
-                value = env.get(key, "false").lower()
+                default = mode == "full" or (
+                    mode == "verified_actions" and key == "CASA_ALLOW_ACTIONS"
+                )
+                value = env[key].lower() if key in env else str(default).lower()
                 if value not in {"true", "false"}:
                     raise ValueError
                 flags[key] = value == "true"
@@ -84,7 +94,8 @@ class Settings(BaseModel):
             return cls(
                 refresh_token=token,
                 homes=homes,
-                allow_unverified_reads=flag == "true",
+                mode=cast(Mode, mode),
+                allow_unverified_reads=flags["CASA_ALLOW_UNVERIFIED_READS"],
                 allow_actions=flags["CASA_ALLOW_ACTIONS"],
                 allow_messages=flags["CASA_ALLOW_MESSAGES"],
                 allow_uploads=flags["CASA_ALLOW_UPLOADS"],

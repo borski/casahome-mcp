@@ -417,8 +417,13 @@ def test_source_write_allowlist_and_no_generic_http() -> None:
     # Provisional SDK methods may reach this finite protocol only behind the
     # separate unverified-actions gate, which reads the same SDK marker.
     unverified = {name for name in ACTION_METHODS if is_unverified(getattr(CasaApi, name))}
-    assert {f"casa_prepare_{name}" for name in unverified} == set(gated_action_tools(Settings()))
-    assert not gated_action_tools(Settings(allow_unverified_actions=True))
+    only_unverified_gate = Settings(allow_actions=True, allow_messages=True, allow_uploads=True)
+    assert {f"casa_prepare_{name}" for name in unverified} == set(
+        gated_action_tools(only_unverified_gate)
+    )
+    assert not gated_action_tools(
+        only_unverified_gate.model_copy(update={"allow_unverified_actions": True})
+    )
 
 
 async def test_manifest_exact_and_action_annotations() -> None:

@@ -133,7 +133,7 @@ async def test_unverified_marker_drives_gate_warning_and_description(case: Workf
     unverified = is_unverified(getattr(CasaApi, case.operation))
     assert action_unverified(case.operation) is unverified
     tool = "casa_prepare_" + case.operation
-    assert (tool in gated_action_tools(Settings())) is unverified
+    assert (tool in gated_action_tools(Settings(allow_actions=True))) is unverified
     h, recorder = sdk_harness(case, unverified=False)
     async with Client(h.server) as client:
         listing = {item.name: item for item in (await client.list_tools()).tools}

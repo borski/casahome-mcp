@@ -10,11 +10,11 @@ or behave differently from the app.
 
 ## Install
 
-Requires Python 3.11 or newer. Version 0.2.0 depends on python-casahome 0.3.x.
+Requires Python 3.11 or newer. Version 0.2.1 depends on python-casahome 0.3.x.
 The lockfile resolves the SDK from the package registry.
 
 ```sh
-uvx casahome-mcp==0.2.0
+uvx casahome-mcp==0.2.1
 ```
 
 Or run a checkout with `uv run --locked casahome-mcp`. The equivalent module
@@ -31,15 +31,23 @@ until the process restarts.
 |---|---|---|
 | `CASA_REFRESH_TOKEN` | unset | Firebase refresh token for your Casa account |
 | `CASA_HOMES_JSON` | `[]` | Up to 16 home UUIDs and labels |
-| `CASA_ALLOW_UNVERIFIED_READS` | `false` | Permit reads marked unverified by the SDK |
-| `CASA_ALLOW_ACTIONS` | `false` | Permit named action preparation and execution |
-| `CASA_ALLOW_UNVERIFIED_ACTIONS` | `false` | Also permit writes marked unverified by the SDK |
-| `CASA_ALLOW_MESSAGES` | `false` | Also permit Casa AI and request-thread text sends |
-| `CASA_ALLOW_UPLOADS` | `false` | Also permit document uploads |
+| `CASA_MODE` | `read_only` | Select a capability profile |
+| `CASA_ALLOW_UNVERIFIED_READS` | profile value | Override unverified reads |
+| `CASA_ALLOW_ACTIONS` | profile value | Override named action access |
+| `CASA_ALLOW_UNVERIFIED_ACTIONS` | profile value | Override unverified writes |
+| `CASA_ALLOW_MESSAGES` | profile value | Override Casa AI and request-thread sends |
+| `CASA_ALLOW_UPLOADS` | profile value | Override document uploads |
 
-The last three flags also require `CASA_ALLOW_ACTIONS=true`. Flags are operator
-permissions, not user consent. Boolean values must be `true` or `false`, ignoring
-case. An empty token leaves the server unconfigured. Whitespace-only tokens and
+The public safe default, `read_only`, sets all five permissions to false.
+`verified_actions` enables actions only. `full` enables all five with
+`CASA_MODE=full`. Set any granular flag explicitly to `true` or `false` to
+override that profile, including disabling a flag under `full`. Unverified
+actions, messages and uploads still require actions. Setting actions to false
+under `full` leaves the other resolved flags true, but blocks those actions.
+`casa_get_status` reports the mode and resolved flags. Profile names and boolean
+values ignore case, but blank or padded values are invalid. Flags grant operator
+permission, not user consent. Changes take effect after a process restart.
+An empty token leaves the server unconfigured. Whitespace-only tokens and
 unresolved `op://` references are rejected. Duplicate home IDs and unknown home
 fields are rejected.
 
@@ -56,7 +64,7 @@ For example, a Claude Desktop style client configuration looks like this:
   "mcpServers": {
     "casahome": {
       "command": "uvx",
-      "args": ["casahome-mcp==0.2.0"],
+      "args": ["casahome-mcp==0.2.1"],
       "env": {
         "CASA_REFRESH_TOKEN": "YOUR_REFRESH_TOKEN",
         "CASA_HOMES_JSON": "[{\"id\":\"11111111-1111-4111-8111-111111111111\",\"label\":\"Home\"}]"
@@ -73,7 +81,7 @@ instead of storing it in the client configuration. For example, with a gitignore
 `.env` containing `CASA_REFRESH_TOKEN=op://YOUR_VAULT/YOUR_ITEM/credential`:
 
 ```sh
-op run --env-file=.env -- uvx casahome-mcp==0.2.0
+op run --env-file=.env -- uvx casahome-mcp==0.2.1
 ```
 
 The secrets tool resolves that reference before starting the server. The server
@@ -85,7 +93,7 @@ authorizes the account.
 
 ## Tools
 
-Version 0.2.0 registers 109 tools: 57 read or local tools, 50 action prepares,
+Version 0.2.1 registers 109 tools: 57 read or local tools, 50 action prepares,
 one execute tool and one cancel tool. The action protocol tools are
 `casa_execute_action` and `casa_cancel_action`. The available tools and their
 parameters are listed by your MCP client. There is no raw HTTP tool.
@@ -102,8 +110,8 @@ Read tools cover:
 
 `casa_get_status` reports local configuration, including tools blocked by the
 unverified gates. `casa_list_homes` lists configured homes without discovering
-devices or homes on Casa. Reads marked unverified require
-`CASA_ALLOW_UNVERIFIED_READS=true`. Confidence labels reflect SDK evidence,
+devices or homes on Casa. Reads marked unverified require the resolved
+unverified reads permission. Confidence labels reflect SDK evidence,
 not a guarantee about every response field. Reads can refresh access tokens
 through Firebase but don't perform Casa account writes.
 
@@ -127,11 +135,10 @@ document structure suggestion dismissal and document deletion:
 | `casa_prepare_delete_document` | Permanently delete one document. Related cleanup and undo are unknown. |
 
 These five contracts are reconstructed from the app and remain unverified against
-Casa. They require both `CASA_ALLOW_ACTIONS=true` and
-`CASA_ALLOW_UNVERIFIED_ACTIONS=true`. Other existing prepares marked unverified
-by the SDK need the same flags. Message sends need `CASA_ALLOW_MESSAGES=true` in
-addition to actions. Document uploads need `CASA_ALLOW_UPLOADS=true` in addition
-to actions.
+Casa. They require both the resolved actions and unverified actions permissions.
+Other existing prepares marked unverified by the SDK need the same permissions.
+Message sends require messages and actions. Document uploads require uploads and
+actions. A profile or an explicit granular override can grant each permission.
 
 `casa_prepare_respond_to_document_structure_suggestion` remains the acceptance
 tool. It accepts the `accepted` decision only. Like dismissal, preparation first

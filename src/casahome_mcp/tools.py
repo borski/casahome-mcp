@@ -226,6 +226,7 @@ def register_tools(server: MCPServer) -> None:
                 warnings=rotation_warnings(app),
                 data=StatusData(
                     version=__version__,
+                    mode=app.settings.mode,
                     token_configured=app.settings.refresh_token is not None,
                     configured_home_count=len(app.settings.homes),
                     allow_unverified_reads=app.settings.allow_unverified_reads,

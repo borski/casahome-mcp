@@ -20,7 +20,9 @@ Reads remain isolated from the action surface:
 
 - Actions are disabled by default. Named prepare tools never mutate the account.
   A separate single-use execute tool requires specific user approval first.
-- No booking, billing, purchases, mailbox claims or access-preference writes.
+- No booking, billing, purchases or mailbox claims.
+- Writes the SDK still marks unverified need a second operator flag,
+  `CASA_ALLOW_UNVERIFIED_ACTIONS`, and their previews say so.
 - No raw HTTP or passthrough tool, and no "return the raw response" option.
 - It never registers a device or discovers homes. You configure home IDs yourself.
 - Source scans forbid SDK writes in read modules. Action invocations have an exact
@@ -54,7 +56,7 @@ stdio server that waits for an MCP host. It isn't an interactive shell.
 
 ## Configuration
 
-The server reads six environment variables at launch. It doesn't load `.env`
+The server reads seven environment variables at launch. It doesn't load `.env`
 files, read config files, call a secrets manager or accept credentials as CLI
 arguments. Settings are fixed for the life of the process.
 
@@ -66,6 +68,7 @@ arguments. Settings are fixed for the life of the process.
 | `CASA_ALLOW_ACTIONS` | `false` | Allows household action preparation and execution |
 | `CASA_ALLOW_MESSAGES` | `false` | Additionally allows Casa AI and request-thread text sends |
 | `CASA_ALLOW_UPLOADS` | `false` | Additionally allows explicit local file snapshots and uploads |
+| `CASA_ALLOW_UNVERIFIED_ACTIONS` | `false` | Additionally allows prepares whose SDK write is still marked unverified |
 
 Notes:
 
@@ -73,8 +76,8 @@ Notes:
   unresolved `op://` references are rejected without echoing them.
 - `CASA_HOMES_JSON` rejects duplicate IDs and unknown fields.
 - All flags accept only `true` or `false`, case-insensitively.
-- Messages and uploads also require `CASA_ALLOW_ACTIONS=true`. Setting only their
-  specialized flag doesn't authorize them. Household todo creation and concierge
+- Messages, uploads and unverified actions also require `CASA_ALLOW_ACTIONS=true`.
+  Setting only their specialized flag doesn't authorize them. Household todo creation and concierge
   handoff use ACTIONS. They aren't AI/request-thread message sends.
 - Flags are operator policy, not authorization from a user to perform an action.
 
@@ -132,12 +135,12 @@ authenticates and authorizes the account.
 
 ## Tools
 
-76 tools: the existing 57 read/local tools plus 17 action prepares, execute and cancel.
+102 tools: 57 read/local tools plus 43 action prepares, execute and cancel.
 55 remote reads use 54 SDK methods. "Gated" read tools
 are disabled unless `CASA_ALLOW_UNVERIFIED_READS=true`. Gating comes from the
 SDK's evidence marker (`casahome.is_unverified`), so it changes automatically
-when the SDK promotes a method. `casa_get_status` lists the currently blocked
-tools in `disabled_features`.
+when the SDK promotes a method. `casa_get_status` lists the tools currently blocked
+by either unverified gate (reads and actions) in `disabled_features`.
 
 ### Local
 
@@ -261,7 +264,50 @@ first and last names and warn that adding a recipient may change account mail
 handling. Auto-archive previews preserve the nullable field exactly and warn that
 retention and disposal behavior is unverified. Neither `30` nor `null` guarantees
 no effect. Execution returns status only, never recipient names, kind or addresses.
-No other provisional SDK mail/package methods are exposed.
+
+### Unverified-contract actions
+
+These prepares call SDK writes reconstructed from the app. Each requires
+`CASA_ALLOW_ACTIONS=true`. Every one whose SDK method carries the unverified marker
+(`casahome.is_unverified`) also requires `CASA_ALLOW_UNVERIFIED_ACTIONS=true`, at
+both prepare and execute. Their previews carry `contract_warning`:
+`UNVERIFIED_CONTRACT: reconstructed from the app, not yet confirmed against Casa.
+May fail or behave differently.` Gate, description and warning all follow the SDK
+marker, so a promoted method automatically needs ACTIONS only.
+
+| Tool | Scope |
+|---|---|
+| `casa_prepare_update_todo` | Title, prepared brief or emoji. At least one. No attachments |
+| `casa_prepare_reject_suggested_todo` | Optional `dismissed` or `already_handled` reason |
+| `casa_prepare_confirm_todo_support` | Explicit `is_support_question` Boolean |
+| `casa_prepare_retry_todo` | Bodyless retry of todo preparation |
+| `casa_prepare_reorder_todo_section` | `ready_for_scheduling` or `send_to_concierge`, revision guard, 1 to 100 IDs |
+| `casa_prepare_update_document` | Name, type slug, date or explicit `clear_document_date` |
+| `casa_prepare_analyze_document` | Explicit `reanalyze` Boolean |
+| `casa_prepare_organize_document` | Bodyless organization start |
+| `casa_prepare_update_schedule_preferences` | Both lists required, days 0 to 7 (at most 7), window IDs |
+| `casa_prepare_update_availability_slots` | Up to 100 integer windows, units unknown |
+| `casa_prepare_cancel_vendor_visit` | Warns of possible cancellation fees. Not undoable |
+| `casa_prepare_remove_mailbox_recipient` | One recipient ID |
+| `casa_prepare_mark_mail_item_read` / `_unread` | One mail item ID |
+| `casa_prepare_set_mail_item_archived` | Explicit `archived` Boolean. Archive isn't shredding |
+| `casa_prepare_validate_package_tracking_number` | Execution returns only `tracking_number_valid` and safe `carrier_ids` |
+| `casa_prepare_add_tracked_package` | Carrier ID, tracking number, name, `inbound`/`outbound`/`unknown` |
+| `casa_prepare_update_package` | Archive, deleted, name or direction. `deleted=true` previews a deletion warning |
+| `casa_prepare_requeue_package_pickup` | One package ID |
+| `casa_prepare_set_package_auto_archive` | Required key, 1 to 365 (local policy) or `null` |
+| `casa_prepare_create_inventory_entity` | Room UUID only. Body home always equals the selected home |
+| `casa_prepare_create_inventory_lighting` | Room UUID, fixture type ID, bulb kind slug, optional bulb type ID |
+| `casa_prepare_create_paint_from_library` | Integer library color ID and 1 to 100 room UUIDs |
+| `casa_prepare_update_entity_properties` | Up to 50 props, each exactly one of `value`, `enum_id` or `multi_enums` |
+| `casa_prepare_clear_ai_message_rating` | One AI message ID. The unknown response is discarded |
+| `casa_prepare_update_access_preferences` | Verified SDK contract, ACTIONS only. All four fields required, each may be `null` |
+
+No image upload IDs or attachments are accepted, because no tool can create those
+uploads. Not exposed: `create_package_pickup_item` (needs an official package-image
+upload receipt the SDK can't obtain), `claim_mailbox` (one-time account action),
+`save_and_publish_entity`, `materialize_todo` and `create_todo` (same verified wire
+contracts as existing prepares) and the internal document-upload steps.
 
 1. Call the named prepare tool with explicit parameters.
 2. Show the user the exact preview, including its home, targets, full content and risks.
@@ -317,8 +363,8 @@ Google Storage host. Partial steps aren't automatically undone.
 At most 16 previews and 64 MiB of pending upload snapshots are retained. Expired
 previews are purged before allocation. Cancellation and shutdown release snapshots.
 Plan updates can affect paid future services. Empty association-map preservation
-semantics remain unverified. Other cadences, notification channels, declines,
-question skipping, attachments, property edits and clear operations aren't exposed.
+semantics remain unverified. Other cadences, notification channels, question skipping
+and attachments aren't exposed.
 
 ## Privacy design
 

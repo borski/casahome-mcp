@@ -27,6 +27,7 @@ from test_tools import (
     success,
 )
 
+from casahome_mcp.actions.policy import ACTION_METHODS
 from casahome_mcp.config import Settings
 from casahome_mcp.projections import project_weather
 from casahome_mcp.tools import READ_METHODS, read
@@ -315,12 +316,17 @@ async def test_read_allowlist_cannot_authorize_bootstrap_or_unregistered_writes(
 
 
 WRITE_SURFACE_MARKERS = (
+    *sorted(ACTION_METHODS),
     "create_todo",
-    "create_todo_result",
-    "send_request_message",
-    "update_entity_properties",
+    "claim_mailbox",
+    "save_and_publish_entity",
+    "materialize_todo",
+    "create_package_pickup_item",
+    "create_document",
     ".post(",
+    ".put(",
     ".patch(",
+    ".delete(",
     ".client",
 )
 

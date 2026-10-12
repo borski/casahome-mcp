@@ -28,7 +28,9 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import CallToolResult, TextContent, Tool, jsonrpc_message_adapter
 from test_actions import CASES as ACTION_CASES
 
+from casahome_mcp.actions.policy import gated_action_tools
 from casahome_mcp.actions.tools import ACTION_TOOLS
+from casahome_mcp.config import Settings
 from casahome_mcp.tools import TOOL_METHODS
 
 HOME_ID = "11111111-1111-4111-8111-111111111111"
@@ -400,8 +402,10 @@ async def test_real_stdio_smoke_and_clean_eof(
             assert data["refresh_token_rotated"] is False
             disabled = data["disabled_features"]
             assert isinstance(disabled, list)
-            assert len(disabled) == len(GATED_TOOLS)
-            assert set(disabled) == GATED_TOOLS
+            expected = GATED_TOOLS | set(gated_action_tools(Settings()))
+            assert len(disabled) == len(expected)
+            assert set(disabled) == expected
+            assert data["allow_unverified_actions"] is False
 
             homes = _structured_payload(await client.call_tool("casa_list_homes"))
             assert homes == {

@@ -80,14 +80,13 @@ def input_guard(
             # turn an object/string/number into an invalid union input.
             for key in ("home_id", "entity_id", "room_id", "target_id"):
                 value = arguments.get(key)
-                if value is not None:
-                    if not isinstance(value, str):
-                        return refusal()
-                    try:
-                        if value.lower() != str(UUID(value)):
-                            return refusal()
-                    except ValueError:
-                        return refusal()
+                if value is not None and not canonical_uuid(value):
+                    return refusal()
+            room_ids = arguments.get("room_ids")
+            if room_ids is not None and not (
+                isinstance(room_ids, list) and all(canonical_uuid(value) for value in room_ids)
+            ):
+                return refusal()
             # Nullable exact filters must not be reinterpreted as JSON objects,
             # arrays or null by MCP's union preprocessing. Refuse ambiguous input.
             for key in (
@@ -110,6 +109,20 @@ def input_guard(
                 "plan_id",
                 "enum_type",
                 "app_id",
+                # Nullable action text and IDs. A JSON-looking string must never
+                # become null, an object or an array before strict validation.
+                "title",
+                "prepared_brief",
+                "emoji",
+                "name",
+                "document_date",
+                "general_instructions",
+                "package_pickup_method",
+                "package_pickup_spot",
+                "package_pickup_general_instructions",
+                "make_id",
+                "model_id",
+                "bulb_entity_type_id",
             ):
                 value = arguments.get(key)
                 if isinstance(value, str):
@@ -131,6 +144,15 @@ def input_guard(
         return await call_next(ctx)
 
     return guard
+
+
+def canonical_uuid(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return value.lower() == str(UUID(value))
+    except ValueError:
+        return False
 
 
 def refusal() -> CallToolResult:

@@ -32,6 +32,7 @@ class Settings(BaseModel):
     allow_actions: bool = False
     allow_messages: bool = False
     allow_uploads: bool = False
+    allow_unverified_actions: bool = False
 
     @field_validator("refresh_token")
     @classmethod
@@ -66,7 +67,12 @@ class Settings(BaseModel):
             if flag not in {"true", "false"}:
                 raise ValueError
             flags: dict[str, bool] = {}
-            for key in ("CASA_ALLOW_ACTIONS", "CASA_ALLOW_MESSAGES", "CASA_ALLOW_UPLOADS"):
+            for key in (
+                "CASA_ALLOW_ACTIONS",
+                "CASA_ALLOW_MESSAGES",
+                "CASA_ALLOW_UPLOADS",
+                "CASA_ALLOW_UNVERIFIED_ACTIONS",
+            ):
                 setting = key
                 value = env.get(key, "false").lower()
                 if value not in {"true", "false"}:
@@ -82,6 +88,7 @@ class Settings(BaseModel):
                 allow_actions=flags["CASA_ALLOW_ACTIONS"],
                 allow_messages=flags["CASA_ALLOW_MESSAGES"],
                 allow_uploads=flags["CASA_ALLOW_UPLOADS"],
+                allow_unverified_actions=flags["CASA_ALLOW_UNVERIFIED_ACTIONS"],
             )
         except (ValidationError, ValueError, TypeError, RecursionError):
             raise ConfigurationError(setting) from None

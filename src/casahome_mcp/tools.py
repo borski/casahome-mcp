@@ -14,6 +14,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from . import __version__
+from .actions.policy import gated_action_tools
 from .config import Settings
 from .coverage_manifest import COVERAGE_METHODS
 from .detail_manifest import DETAIL_METHODS
@@ -231,8 +232,9 @@ def register_tools(server: MCPServer) -> None:
                     allow_actions=app.settings.allow_actions,
                     allow_messages=app.settings.allow_messages,
                     allow_uploads=app.settings.allow_uploads,
+                    allow_unverified_actions=app.settings.allow_unverified_actions,
                     refresh_token_rotated=app.refresh_token_rotated,
-                    disabled_features=gated_tools(app.settings),
+                    disabled_features=gated_tools(app.settings) + gated_action_tools(app.settings),
                 ),
             )
         )

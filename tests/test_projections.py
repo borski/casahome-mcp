@@ -452,6 +452,7 @@ def test_local_status_and_home_contracts() -> None:
         "allow_actions",
         "allow_messages",
         "allow_uploads",
+        "allow_unverified_actions",
         "refresh_token_rotated",
         "disabled_features",
     }

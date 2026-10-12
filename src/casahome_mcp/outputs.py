@@ -58,6 +58,7 @@ class StatusData(OutputModel):
     allow_actions: bool = False
     allow_messages: bool = False
     allow_uploads: bool = False
+    allow_unverified_actions: bool = False
     refresh_token_rotated: bool
     disabled_features: list[str]
 

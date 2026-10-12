@@ -6,10 +6,32 @@ from datetime import date
 from typing import Literal
 
 from casahome.models.ai import CasaAIFeedbackResponse, CasaAISendMessageResponse
-from casahome.models.documents import CreateDocumentResponse, SavedResponse
+from casahome.models.availability import MemberAvailabilityDetail
+from casahome.models.documents import (
+    CreateDocumentResponse,
+    DocumentDetailsResponse,
+    SavedResponse,
+)
 from casahome.models.entity_publish import SaveAndPublishEntityResponse
-from casahome.models.mail_workflows import MailboxAutoArchiveResponse, MailboxRecipientResponse
-from casahome.models.preferences import NotificationSettingsResponse
+from casahome.models.mail_workflows import (
+    AddPackageRequest,
+    CreateEntityRequest,
+    CreateEntityResponse,
+    CreateLightingRequest,
+    CreateLightingResponse,
+    CreatePaintFromLibraryRequest,
+    CreatePaintFromLibraryResponse,
+    MailboxAutoArchiveResponse,
+    MailboxRecipientResponse,
+    TrackingNumberValidationResponse,
+    UpdatePackageAutoArchiveResponse,
+    UpdatePackageRequest,
+)
+from casahome.models.preferences import (
+    AccessPreferencesResponse,
+    NotificationSettingsResponse,
+    SchedulePreferencesResponse,
+)
 from casahome.models.read_todos import TodoDetailsResponse
 from casahome.models.todos import CreateTodoBody
 from casahome.models.verified_writes import (
@@ -19,13 +41,25 @@ from casahome.models.verified_writes import (
     SingleSelectAnswer,
     SingleSelectRoundAnswer,
 )
+from casahome.models.workflows import (
+    CancelVendorVisitResponse,
+    MemberAvailabilitySlotWindow,
+    ReorderTodoSectionResponse,
+    TodoOrderSection,
+    TodoRejectionReason,
+    UpdateDocumentBody,
+    UpdateSchedulePreferencesRequest,
+    UpdateTodoBody,
+)
 from casahome.models.write_contracts import (
     BasicMessageResponse,
     CreateTodoResponse,
     SendRequestMessageRequest,
     SendRequestMessageResponse,
+    UpdateEntityPropertiesRequest,
 )
 from casahome.writes import SentCasaAIMessage
+from pydantic import JsonValue
 from test_tools import SECRET, FakeCasa
 
 from casahome_mcp.action_protocol import CasaActionsProtocol
@@ -274,3 +308,199 @@ class FakeActions(CasaActionsProtocol):
             decision,
         )
         return SavedResponse(saved=True)
+
+    async def update_access_preferences(
+        self,
+        home_id: str,
+        *,
+        general_instructions: str | None,
+        package_pickup_method: str | None,
+        package_pickup_spot: str | None,
+        package_pickup_general_instructions: str | None,
+    ) -> AccessPreferencesResponse:
+        await self.record(
+            "update_access_preferences",
+            home_id,
+            general_instructions,
+            package_pickup_method,
+            package_pickup_spot,
+            package_pickup_general_instructions,
+        )
+        return AccessPreferencesResponse(home_id=home_id, general_instructions=SECRET)
+
+    # Provisional workflow writes. Bodies are recorded in their wire JSON form.
+
+    async def update_todo(
+        self, home_id: str, todo_id: str, body: UpdateTodoBody
+    ) -> TodoDetailsResponse:
+        await self.record(
+            "update_todo", home_id, todo_id, body.model_dump(mode="json", exclude_none=True)
+        )
+        return self.reads.todo_result
+
+    async def reject_suggested_todo(
+        self, home_id: str, todo_id: str, reason: TodoRejectionReason | None = None
+    ) -> TodoDetailsResponse:
+        await self.record("reject_suggested_todo", home_id, todo_id, reason)
+        return self.reads.todo_result
+
+    async def confirm_todo_support(
+        self, home_id: str, todo_id: str, is_support_question: bool
+    ) -> TodoDetailsResponse:
+        await self.record("confirm_todo_support", home_id, todo_id, is_support_question)
+        return self.reads.todo_result
+
+    async def update_document(
+        self, home_id: str, document_id: str, body: UpdateDocumentBody
+    ) -> DocumentDetailsResponse:
+        await self.record(
+            "update_document",
+            home_id,
+            document_id,
+            body.model_dump(mode="json", exclude_unset=True),
+        )
+        return self.reads.document
+
+    async def analyze_document(
+        self, home_id: str, document_id: str, reanalyze: bool
+    ) -> DocumentDetailsResponse:
+        await self.record("analyze_document", home_id, document_id, reanalyze)
+        return self.reads.document
+
+    async def organize_document(self, home_id: str, document_id: str) -> DocumentDetailsResponse:
+        await self.record("organize_document", home_id, document_id)
+        return self.reads.document
+
+    async def update_schedule_preferences(
+        self, home_id: str, body: UpdateSchedulePreferencesRequest
+    ) -> SchedulePreferencesResponse:
+        await self.record("update_schedule_preferences", home_id, body.model_dump(mode="json"))
+        return self.reads.schedule
+
+    async def update_availability_slots(
+        self,
+        home_id: str,
+        availability_request_id: str,
+        windows: Sequence[MemberAvailabilitySlotWindow],
+    ) -> MemberAvailabilityDetail:
+        await self.record(
+            "update_availability_slots",
+            home_id,
+            availability_request_id,
+            [window.model_dump(mode="json") for window in windows],
+        )
+        return self.reads.availability
+
+    async def reorder_todo_section(
+        self,
+        home_id: str,
+        section: TodoOrderSection,
+        *,
+        expected_revision: int,
+        ordered_item_ids: Sequence[str],
+    ) -> ReorderTodoSectionResponse:
+        await self.record(
+            "reorder_todo_section", home_id, section, expected_revision, list(ordered_item_ids)
+        )
+        return ReorderTodoSectionResponse.model_validate(
+            {"section": {"name": section, "title": SECRET}}
+        )
+
+    async def retry_todo(self, home_id: str, todo_id: str) -> TodoDetailsResponse:
+        await self.record("retry_todo", home_id, todo_id)
+        return self.reads.todo_result
+
+    async def cancel_vendor_visit(self, home_id: str, visit_id: str) -> CancelVendorVisitResponse:
+        await self.record("cancel_vendor_visit", home_id, visit_id)
+        return CancelVendorVisitResponse(id=visit_id, status=SECRET)
+
+    async def remove_mailbox_recipient(
+        self, home_id: str, recipient_id: str
+    ) -> BasicMessageResponse:
+        await self.record("remove_mailbox_recipient", home_id, recipient_id)
+        return BasicMessageResponse(message=SECRET)
+
+    async def mark_mail_item_read(self, home_id: str, mail_item_id: str) -> BasicMessageResponse:
+        await self.record("mark_mail_item_read", home_id, mail_item_id)
+        return BasicMessageResponse(message=SECRET)
+
+    async def mark_mail_item_unread(self, home_id: str, mail_item_id: str) -> BasicMessageResponse:
+        await self.record("mark_mail_item_unread", home_id, mail_item_id)
+        return BasicMessageResponse(message=SECRET)
+
+    async def set_mail_item_archived(
+        self, home_id: str, mail_item_id: str, archived: bool
+    ) -> BasicMessageResponse:
+        await self.record("set_mail_item_archived", home_id, mail_item_id, archived)
+        return BasicMessageResponse(message=SECRET)
+
+    async def validate_package_tracking_number(
+        self, home_id: str, tracking_number: str
+    ) -> TrackingNumberValidationResponse:
+        await self.record("validate_package_tracking_number", home_id, tracking_number)
+        return TrackingNumberValidationResponse(
+            tracking_number=SECRET, valid=True, carrier_matches=["carrier-one", SECRET + "/x"]
+        )
+
+    async def add_tracked_package(
+        self, home_id: str, carrier_id: str, body: AddPackageRequest
+    ) -> BasicMessageResponse:
+        await self.record("add_tracked_package", home_id, carrier_id, body.model_dump(mode="json"))
+        return BasicMessageResponse(message=SECRET)
+
+    async def update_package(
+        self, home_id: str, package_id: str, body: UpdatePackageRequest
+    ) -> BasicMessageResponse:
+        await self.record(
+            "update_package", home_id, package_id, body.model_dump(mode="json", exclude_none=True)
+        )
+        return BasicMessageResponse(message=SECRET)
+
+    async def requeue_package_pickup(self, home_id: str, package_id: str) -> BasicMessageResponse:
+        await self.record("requeue_package_pickup", home_id, package_id)
+        return BasicMessageResponse(message=SECRET)
+
+    async def set_package_auto_archive(
+        self, home_id: str, package_auto_archive_days: int | None
+    ) -> UpdatePackageAutoArchiveResponse:
+        await self.record("set_package_auto_archive", home_id, package_auto_archive_days)
+        return UpdatePackageAutoArchiveResponse(
+            success=True, package_auto_archive_days=package_auto_archive_days
+        )
+
+    async def create_inventory_entity(
+        self, home_id: str, body: CreateEntityRequest
+    ) -> CreateEntityResponse:
+        await self.record(
+            "create_inventory_entity", home_id, body.model_dump(mode="json", exclude_none=True)
+        )
+        return CreateEntityResponse(entity_id="entity-new", message=SECRET)
+
+    async def create_inventory_lighting(
+        self, home_id: str, body: CreateLightingRequest
+    ) -> CreateLightingResponse:
+        await self.record(
+            "create_inventory_lighting", home_id, body.model_dump(mode="json", exclude_none=True)
+        )
+        return CreateLightingResponse(fixture_entity_id="fixture-new", message=SECRET)
+
+    async def create_paint_from_library(
+        self, home_id: str, body: CreatePaintFromLibraryRequest
+    ) -> CreatePaintFromLibraryResponse:
+        await self.record("create_paint_from_library", home_id, body.model_dump(mode="json"))
+        return CreatePaintFromLibraryResponse(entity_id="paint-new")
+
+    async def clear_ai_message_rating(self, home_id: str, message_id: str) -> JsonValue:
+        await self.record("clear_ai_message_rating", home_id, message_id)
+        return {"secret": SECRET}
+
+    async def update_entity_properties(
+        self, home_id: str, entity_id: str, body: UpdateEntityPropertiesRequest
+    ) -> BasicMessageResponse:
+        await self.record(
+            "update_entity_properties",
+            home_id,
+            entity_id,
+            body.model_dump(mode="json", exclude_none=True),
+        )
+        return BasicMessageResponse(message=SECRET)

@@ -2,10 +2,9 @@
 
 import asyncio
 import hashlib
-from collections.abc import Callable
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Literal, TypeVar
+from typing import Annotated, Literal
 
 from casahome.models.entity_publish import EntityModelName, SaveAndPublishEntityRequest
 from casahome.models.mail_workflows import AddMailboxRecipientRequest, MailboxAutoArchiveRequest
@@ -26,14 +25,26 @@ from casahome.models.write_contracts import CreateTodoBody, SendRequestMessageRe
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.server.mcpserver.utilities.func_metadata import FuncMetadata, func_metadata
-from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field, JsonValue
+from mcp.server.mcpserver.utilities.func_metadata import FuncMetadata
+from pydantic import Field, JsonValue
 
 from ..action_protocol import CasaActionsProtocol
 from ..errors import failure
 from ..runtime import AppContext
-from ..tools import EntityId, HomeId, resolve_home
+from ..tools import EntityId, HomeId
+from .core import (
+    CANCEL,
+    EXECUTE,
+    PREPARE,
+    UPLOAD_PREPARE,
+    authorize,
+    description,
+    execute,
+    make_action_tool,
+    prepare,
+    preview_body,
+    result,
+)
 from .models import (
     ActionResult,
     Answer,
@@ -47,133 +58,17 @@ from .models import (
     StrictFlag,
     Token,
 )
-from .store import CONSENT_WARNING, Group, Invocation, action_error
+from .policy import ACTION_METHODS, ACTION_TOOLS
+from .store import action_error
 from .uploads import LOCAL_FILE_CAP, SnapshotWorker, snapshot_file
+from .workflow_tools import register_workflow_tools
 
-ACTION_METHODS = frozenset(
-    {
-        "move_entity_to_room",
-        "rate_ai_message",
-        "respond_to_suggested_todo",
-        "send_todo_to_concierge",
-        "answer_todo_question",
-        "submit_todo_question_round",
-        "update_autopilot_plan",
-        "update_notification_settings",
-        "send_ai_message",
-        "send_request_message",
-        "create_todo_result",
-        "upload_document",
-        "delete_todo",
-        "update_entity_model",
-        "respond_to_document_structure_suggestion",
-        "add_mailbox_recipient",
-        "update_mailbox_auto_archive",
-    }
-)
-ACTION_TOOLS = frozenset(f"casa_prepare_{method}" for method in ACTION_METHODS) | {
-    "casa_execute_action",
-    "casa_cancel_action",
-}
-
-PREPARE = ToolAnnotations(
-    read_only_hint=False,
-    destructive_hint=False,
-    idempotent_hint=False,
-    open_world_hint=False,
-)
-UPLOAD_PREPARE = ToolAnnotations(
-    read_only_hint=False,
-    destructive_hint=False,
-    idempotent_hint=False,
-    open_world_hint=True,
-)
-EXECUTE = ToolAnnotations(
-    read_only_hint=False,
-    destructive_hint=True,
-    idempotent_hint=False,
-    open_world_hint=True,
-)
-CANCEL = ToolAnnotations(
-    read_only_hint=False,
-    destructive_hint=False,
-    idempotent_hint=False,
-    open_world_hint=False,
-)
-
-
-def description(summary: str) -> str:
-    return f"{summary} Prepare only, no account mutation. {CONSENT_WARNING}"
-
-
-def authorize(app: AppContext, home_id: str | None, group: Group) -> str:
-    home = resolve_home(app, home_id)
-    if not app.settings.allow_actions:
-        raise action_error("ACTIONS_DISABLED")
-    if group == "messages" and not app.settings.allow_messages:
-        raise action_error("MESSAGES_DISABLED")
-    if group == "uploads" and not app.settings.allow_uploads:
-        raise action_error("UPLOADS_DISABLED")
-    if app.settings.refresh_token is None or app.actions is None:
-        raise failure("AUTH_NOT_CONFIGURED")
-    return home
-
-
-def result(home: str, operation: str) -> ActionResult:
-    return ActionResult(outcome="SUCCEEDED", operation=operation, home_id=home)
+__all__ = ["ACTION_METHODS", "ACTION_TOOLS", "execute", "register_action_tools"]
 
 
 def check_upload_deadline(app: AppContext, deadline: float) -> None:
     if app.uploads_closed or asyncio.get_running_loop().time() >= deadline:
         raise failure("TIMEOUT")
-
-
-def preview_body(body: BaseModel) -> dict[str, JsonValue]:
-    # SDK codecs validate before preparation. JSON-mode is the exact immutable
-    # payload used for preview and reconstructed for the one execution attempt.
-    return body.model_dump(mode="json")
-
-
-def prepare(
-    app: AppContext,
-    home_id: str | None,
-    operation: str,
-    preview: dict[str, JsonValue],
-    invoke: Invocation,
-    group: Group = "actions",
-) -> dict[str, JsonValue]:
-    home = authorize(app, home_id, group)
-    if operation not in ACTION_METHODS:
-        raise failure("INTERNAL_ERROR")
-    return app.action_store.add(home, operation, group, preview, invoke)
-
-
-async def execute(app: AppContext, token: str, confirmed: bool) -> ActionResult:
-    pending = app.action_store.get(token)
-    if not confirmed:
-        return ActionResult(
-            outcome="NOT_EXECUTED",
-            operation=pending.operation,
-            home_id=pending.home_id,
-        )
-    authorize(app, pending.home_id, pending.group)
-    api = app.actions
-    if api is None:
-        raise failure("AUTH_NOT_CONFIGURED")
-    # No await before this atomic pop. Every attempt consumes the token before
-    # waiting for a semaphore, refreshing auth or making ANY SDK call.
-    pending = app.action_store.consume(token)
-    try:
-        async with asyncio.timeout(app.deadline_seconds), app.semaphore:
-            return await pending.invoke(api, pending.home_id)
-    except Exception:
-        # Even response parse failures can follow a completed write. No retries,
-        # reusable token, raw exception text or raw upstream response.
-        return ActionResult(
-            outcome="UNKNOWN",
-            operation=pending.operation,
-            home_id=pending.home_id,
-        )
 
 
 async def prepare_upload_document(
@@ -186,7 +81,7 @@ async def prepare_upload_document(
 ) -> dict[str, JsonValue]:
     """One monotonic deadline, with leases surviving cancellation of this coroutine."""
     deadline = asyncio.get_running_loop().time() + app.deadline_seconds
-    home = authorize(app, home_id, "uploads")
+    home = authorize(app, home_id, "uploads", "upload_document")
     if app.api is None:
         raise failure("AUTH_NOT_CONFIGURED")
     # Only the chosen basename reaches Casa, never the local source path.
@@ -201,14 +96,14 @@ async def prepare_upload_document(
             await app.upload_lock.acquire()
             lock_owned = True
             check_upload_deadline(app, deadline)
-            authorize(app, home, "uploads")
+            authorize(app, home, "uploads", "upload_document")
             app.action_store.check_capacity()
             async with app.semaphore:
                 policy = await app.api.document_types(home)
             if mimetype not in policy.allowed_mimetypes or policy.max_files_per_upload < 1:
                 raise action_error("INVALID_FILE")
             check_upload_deadline(app, deadline)
-            authorize(app, home, "uploads")
+            authorize(app, home, "uploads", "upload_document")
             limit = min(
                 LOCAL_FILE_CAP, policy.max_file_size_bytes, app.action_store.remaining_bytes()
             )
@@ -226,7 +121,7 @@ async def prepare_upload_document(
             content = await worker.content()
             DocumentUploadFile(size_bytes=len(content), mimetype=mimetype)
             check_upload_deadline(app, deadline)
-            authorize(app, home, "uploads")
+            authorize(app, home, "uploads", "upload_document")
 
             async def invoke(api: CasaActionsProtocol, selected_home: str) -> ActionResult:
                 await api.upload_document(
@@ -270,26 +165,10 @@ async def prepare_upload_document(
             app.upload_lock.release()
 
 
-F = TypeVar("F", bound=Callable[..., object])
-
-
 def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
     validators: dict[str, FuncMetadata] = {}
-
-    def action_tool(
-        *, description: str, annotations: ToolAnnotations, structured_output: bool
-    ) -> Callable[[F], F]:
-        def register(fn: F) -> F:
-            validators[fn.__name__] = func_metadata(fn, skip_names=("ctx",))
-            server.add_tool(
-                fn,
-                description=description,
-                annotations=annotations,
-                structured_output=structured_output,
-            )
-            return fn
-
-        return register
+    action_tool = make_action_tool(server, validators)
+    register_workflow_tools(action_tool)
 
     @action_tool(
         description=description(

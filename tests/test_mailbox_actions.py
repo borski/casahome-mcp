@@ -31,17 +31,21 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     guard_sockets(monkeypatch)
 
 
-def test_protocol_matches_only_promoted_sdk_mail_methods() -> None:
-    exposed_mail = {"add_mailbox_recipient", "update_mailbox_auto_archive"}
+def test_protocol_matches_promoted_sdk_mail_methods() -> None:
+    # Pickup creation needs an official upload receipt the SDK can't obtain.
+    unexposed = {"create_package_pickup_item"}
     methods = {name for name in vars(ProvisionalMailMixin) if not name.startswith("_")}
-    assert methods & ACTION_METHODS == exposed_mail
-    assert methods & {name.removeprefix("casa_prepare_") for name in ACTION_TOOLS} == exposed_mail
-    for name in exposed_mail:
+    assert methods & ACTION_METHODS == methods - unexposed
+    assert methods & {name.removeprefix("casa_prepare_") for name in ACTION_TOOLS} == (
+        methods - unexposed
+    )
+    for name in ("add_mailbox_recipient", "update_mailbox_auto_archive"):
         assert not is_unverified(getattr(CasaApi, name))
+    # upload_document deliberately narrows the SDK source to immutable bytes.
+    for name in ACTION_METHODS - {"upload_document"}:
         assert inspect.signature(getattr(CasaActionsProtocol, name), eval_str=True) == (
             inspect.signature(getattr(CasaApi, name), eval_str=True)
         )
-    assert all(is_unverified(getattr(CasaApi, name)) for name in methods - exposed_mail)
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -49,8 +53,8 @@ async def test_canonical_tool_schemas_and_annotations(mode: str) -> None:
     h = harness()
     async with Client(h.server, mode=mode) as client:
         listing = await client.list_tools()
-    assert len(listing.tools) == 76
-    assert len(ACTION_METHODS) == 17 and len(ACTION_TOOLS) == 19
+    assert len(listing.tools) == 102
+    assert len(ACTION_METHODS) == 43 and len(ACTION_TOOLS) == 45
     for tool in listing.tools:
         if tool.name not in {RECIPIENT_TOOL, ARCHIVE_TOOL}:
             continue

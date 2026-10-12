@@ -25,9 +25,11 @@ from test_tools import (
     settings,
     success,
 )
+from workflow_cases import WORKFLOW_CASES
 
 from casahome_mcp.action_protocol import CasaActionsProtocol
 from casahome_mcp.actions.models import ActionResult
+from casahome_mcp.actions.policy import gated_action_tools
 from casahome_mcp.actions.store import MAX_BYTES, MAX_PENDING, ActionStore
 from casahome_mcp.actions.tools import ACTION_METHODS, ACTION_TOOLS, execute
 from casahome_mcp.actions.uploads import LOCAL_FILE_CAP, snapshot_file
@@ -35,6 +37,7 @@ from casahome_mcp.config import ConfigurationError, Settings
 from casahome_mcp.coverage_projections import project_ai_history
 
 CASES: tuple[tuple[str, dict[str, object]], ...] = (
+    *WORKFLOW_CASES,
     ("move_entity_to_room", {"entity_id": ENTITY, "room_id": HOME}),
     ("rate_ai_message", {"message_id": "message-one", "rating": "good"}),
     ("respond_to_suggested_todo", {"suggestion_id": "suggestion-one", "decision": "accept"}),
@@ -103,9 +106,20 @@ def deny_network(monkeypatch: pytest.MonkeyPatch) -> None:
     guard_sockets(monkeypatch)
 
 
-def harness(*, actions: bool = True, messages: bool = True, uploads: bool = True) -> Harness:
+def harness(
+    *,
+    actions: bool = True,
+    messages: bool = True,
+    uploads: bool = True,
+    unverified: bool = True,
+) -> Harness:
     configured = settings().model_copy(
-        update={"allow_actions": actions, "allow_messages": messages, "allow_uploads": uploads}
+        update={
+            "allow_actions": actions,
+            "allow_messages": messages,
+            "allow_uploads": uploads,
+            "allow_unverified_actions": unverified,
+        }
     )
     return Harness(configured)
 
@@ -368,9 +382,11 @@ def test_source_write_allowlist_and_no_generic_http() -> None:
     assert {
         name for name in vars(CasaActionsProtocol) if not name.startswith("_")
     } == ACTION_METHODS
-    # A sibling SDK may expose provisional methods. None may reach this finite
-    # action protocol, even if new SDK methods are added or their markers change.
-    assert not {name for name in ACTION_METHODS if is_unverified(getattr(CasaApi, name))}
+    # Provisional SDK methods may reach this finite protocol only behind the
+    # separate unverified-actions gate, which reads the same SDK marker.
+    unverified = {name for name in ACTION_METHODS if is_unverified(getattr(CasaApi, name))}
+    assert {f"casa_prepare_{name}" for name in unverified} == set(gated_action_tools(Settings()))
+    assert not gated_action_tools(Settings(allow_unverified_actions=True))
 
 
 async def test_manifest_exact_and_action_annotations() -> None:
@@ -562,10 +578,19 @@ async def test_upload_rechecks_upload_gate_and_uses_policy_before_file_io(
     assert fake.calls == []
 
 
-@pytest.mark.parametrize("key", ["CASA_ALLOW_ACTIONS", "CASA_ALLOW_MESSAGES", "CASA_ALLOW_UPLOADS"])
+@pytest.mark.parametrize(
+    "key",
+    [
+        "CASA_ALLOW_ACTIONS",
+        "CASA_ALLOW_MESSAGES",
+        "CASA_ALLOW_UPLOADS",
+        "CASA_ALLOW_UNVERIFIED_ACTIONS",
+    ],
+)
 def test_flags_strict_and_default_deny(key: str) -> None:
     default = Settings.from_env({})
     assert not default.allow_actions and not default.allow_messages and not default.allow_uploads
+    assert not default.allow_unverified_actions
     with pytest.raises(ConfigurationError, match=key):
         Settings.from_env({key: SECRET})
     configured = Settings.from_env({key: "TRUE"})

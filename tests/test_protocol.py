@@ -24,6 +24,7 @@ from test_tools import (
     success,
 )
 
+from casahome_mcp.actions.policy import gated_action_tools
 from casahome_mcp.actions.tools import ACTION_TOOLS
 from casahome_mcp.tools import TOOL_METHODS
 
@@ -236,8 +237,13 @@ async def test_local_tools_never_authenticate_or_discover_homes(
         assert data["refresh_token_rotated"] is False
         assert "authenticated" not in data
         disabled = sequence(data["disabled_features"])
-        assert set(disabled) == (set() if enabled else set(GATED_TOOLS))
-        assert len(disabled) == (0 if enabled else len(GATED_TOOLS))
+        expected = (set() if enabled else set(GATED_TOOLS)) | set(
+            gated_action_tools(harness.settings)
+        )
+        assert gated_action_tools(harness.settings)
+        assert set(disabled) == expected
+        assert len(disabled) == len(expected)
+        assert data["allow_unverified_actions"] is False
         listed = success(await client.call_tool("casa_list_homes"))
         assert listed["source"] == "configuration"
         assert listed["confidence"] == "LOCAL"

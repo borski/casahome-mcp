@@ -30,6 +30,9 @@ def action_error(code: str) -> ToolError:
         "ACTIONS_DISABLED": "The operator controls CASA_ALLOW_ACTIONS.",
         "MESSAGES_DISABLED": "The operator controls CASA_ALLOW_MESSAGES in addition to actions.",
         "UPLOADS_DISABLED": "The operator controls CASA_ALLOW_UPLOADS in addition to actions.",
+        "UNVERIFIED_ACTIONS_DISABLED": (
+            "The operator controls CASA_ALLOW_UNVERIFIED_ACTIONS in addition to actions."
+        ),
         "CAPACITY_EXCEEDED": "Cancel pending previews or wait for their expiry.",
         "INVALID_FILE": "Choose a nonempty regular file within the upload policy.",
     }

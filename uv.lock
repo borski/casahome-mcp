@@ -1466,15 +1466,15 @@ wheels = [
 
 [[package]]
 name = "python-casahome"
-version = "0.3.0"
+version = "0.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/9f/7ccbea6c194f66483fc1922215486ad655ab624340706bea60190083d657/python_casahome-0.3.0.tar.gz", hash = "sha256:bc5f2e15853494ffd64b3cb8a52dfefb2853cff026bb2cc914620cb9f74a68b1", size = 252574, upload-time = "2026-10-12T16:57:38.044Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/05/4e48b1a0ba2edbe7d082d5d2476be0193c84bb6821eed036f811f2ea0d19/python_casahome-0.3.1.tar.gz", hash = "sha256:58b8815ef7399f572d4cb04da4121749476e570d62c646a7811dad0c68bc3cb2", size = 248598, upload-time = "2026-10-12T17:51:09.484Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/29/d4f559aa5f58bcaca96a80b11c07ba01e7997e9bdb71ef058764534242e9/python_casahome-0.3.0-py3-none-any.whl", hash = "sha256:7880a8b82c7cddcc4a10bf5142b56d1f4cd0dccfcb012bc1cdf8b6927e6203c1", size = 99185, upload-time = "2026-10-12T16:57:36.873Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/7b/57ec4ea6688a76ee4f5ba5c68bddf55eff1e3c0ea7b43ffa5f2139201362/python_casahome-0.3.1-py3-none-any.whl", hash = "sha256:b64e8505fe8630a4f6f6502302dbd3cc681694f7d72216f42984ca36e6376632", size = 95214, upload-time = "2026-10-12T17:51:08.032Z" },
 ]
 
 [[package]]

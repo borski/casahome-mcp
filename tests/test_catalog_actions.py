@@ -109,7 +109,8 @@ def test_sdk_write_coverage_and_read_manifest_stay_separate() -> None:
     assert len(TOOL_METHODS) == 55 and len(READ_METHODS) == 54
     assert not ACTION_METHODS & READ_METHODS
     readme = (Path(__file__).parents[1] / "README.md").read_text()
-    assert "109 tools: 57 read/local tools plus 50 action prepares, execute and cancel." in readme
+    assert "109 tools: 57 read or local tools, 50 action prepares," in readme
+    assert "one execute tool and one cancel tool" in readme
     for operation in ("update_entity_make_model", "rename_room"):
         assert not is_unverified(getattr(CasaApi, operation))
         assert not action_unverified(operation)

@@ -33,6 +33,14 @@ from casahome.models.preferences import (
     SchedulePreferencesResponse,
 )
 from casahome.models.read_todos import TodoDetailsResponse
+from casahome.models.recovered_contracts import (
+    HomeDocumentDeleteResponse,
+    UpdateRequestDetailBody,
+    UpdateRequestDetailResponse,
+    UpdateStoryBody,
+    UpdateTaskResponse,
+    UpdateTaskScalarBody,
+)
 from casahome.models.todos import CreateTodoBody
 from casahome.models.verified_writes import (
     MultiSelectAnswer,
@@ -66,6 +74,64 @@ from casahome_mcp.action_protocol import CasaActionsProtocol
 
 
 class FakeActions(CasaActionsProtocol):
+    async def update_request_detail(
+        self, home_id: str, request_id: str, body: UpdateRequestDetailBody
+    ) -> UpdateRequestDetailResponse:
+        await self.record(
+            "update_request_detail", home_id, request_id, body.model_dump(exclude_none=True)
+        )
+        return UpdateRequestDetailResponse.model_validate(
+            {
+                "id": request_id,
+                "type": "general",
+                "status": "open",
+                "title": SECRET,
+                "emoji": "x",
+                "has_unread_messages": False,
+            }
+        )
+
+    async def update_task(
+        self, home_id: str, task_id: str, body: UpdateTaskScalarBody
+    ) -> UpdateTaskResponse:
+        await self.record("update_task", home_id, task_id, body.model_dump(exclude_none=True))
+        return UpdateTaskResponse.model_validate(
+            {
+                "id": task_id,
+                "title": SECRET,
+                "description": SECRET,
+                "emoji": "x",
+                "status": "open",
+                "updates": [],
+                "can_schedule_handyman_vendor_visit": False,
+                "can_chat_with_concierge": False,
+                "can_edit": True,
+                "can_delete": True,
+            }
+        )
+
+    async def update_story(
+        self, home_id: str, story_id: str, body: UpdateStoryBody
+    ) -> BasicMessageResponse:
+        await self.record("update_story", home_id, story_id, body.model_dump(exclude_none=True))
+        return BasicMessageResponse(message=SECRET)
+
+    async def dismiss_document_structure_suggestion(
+        self, home_id: str, document_id: str, suggestion_id: str, expected_values: Sequence[str]
+    ) -> SavedResponse:
+        await self.record(
+            "dismiss_document_structure_suggestion",
+            home_id,
+            document_id,
+            suggestion_id,
+            list(expected_values),
+        )
+        return SavedResponse(saved=True)
+
+    async def delete_document(self, home_id: str, document_id: str) -> HomeDocumentDeleteResponse:
+        await self.record("delete_document", home_id, document_id)
+        return HomeDocumentDeleteResponse(deleted=True)
+
     def __init__(self, reads: FakeCasa) -> None:
         self.reads = reads
         self.calls: list[tuple[str, tuple[object, ...]]] = []

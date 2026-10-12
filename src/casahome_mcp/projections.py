@@ -7,6 +7,7 @@ The tool layer owns envelope size checks and sanitized SDK/validation errors.
 import re
 from collections.abc import Callable, Sequence
 from typing import Literal, TypeVar
+from unicodedata import category
 
 from casahome.models.bootstrap import HomeBadgeCounts
 from casahome.models.calendar import CalendarEvent, VisitsCalendarResponse
@@ -53,6 +54,7 @@ from casahome_mcp.outputs import (
     RequestLane,
     RequestsData,
     RoomSummary,
+    StorySummary,
     TodoSummary,
     WeatherData,
 )
@@ -274,7 +276,7 @@ def project_inventory(
 ) -> tuple[InventoryData, list[str]]:
     """Page rooms or entities. ``room``/``category`` are exact entity filters."""
     warnings = ["UPSTREAM_COMPLETENESS_UNKNOWN"]
-    result: Page[EntitySummary | RoomSummary]
+    result: Page[EntitySummary | RoomSummary | StorySummary]
     if kind == "entities":
         room_ids = {
             label
@@ -309,9 +311,45 @@ def project_inventory(
             offset=offset,
             limit=limit,
         )
+    elif kind == "stories":
+        if room is not None or category is not None or include_model_summary:
+            raise ProjectionError("INVALID_ARGUMENT")
+        stories = []
+        for story in model.home.stories:
+            if not _ROOM_TYPE_ID.fullmatch(story.id):
+                _warn(warnings, "STORY_OMITTED")
+                continue
+            stories.append(story)
+        result = page(
+            stories,
+            project=lambda story: StorySummary(
+                id=story.id,
+                name=_safe_story_name(story.name, warnings),
+                story_metadata_complete=_story_name_complete(story.name),
+                floor_number=story.floor_number,
+                room_count=len(story.rooms),
+            ),
+            offset=offset,
+            limit=limit,
+        )
     else:
         raise ProjectionError("INVALID_ARGUMENT")
     return InventoryData(kind=kind, page=result), warnings
+
+
+def _story_name_complete(value: str) -> bool:
+    return (
+        len(value) <= 256
+        and not _URL_VALUE.search(value)
+        and not any(category(c) in {"Cc", "Cf", "Cs", "Zl", "Zp"} for c in value)
+    )
+
+
+def _safe_story_name(value: str, warnings: list[str]) -> str | None:
+    if not _story_name_complete(value):
+        _warn(warnings, "STORY_NAME_OMITTED")
+        return None
+    return value
 
 
 def project_inventory_item(

@@ -160,7 +160,7 @@ async def test_exact_tool_manifest_schemas_and_annotations(mode: str, enabled: b
             if "kind" in properties:
                 help_bundle = tool.name == "casa_get_help_center_bundle"
                 assert mapping(properties["kind"])["enum"] == (
-                    ["topics", "articles"] if help_bundle else ["entities", "rooms"]
+                    ["topics", "articles"] if help_bundle else ["entities", "rooms", "stories"]
                 )
                 assert mapping(properties["kind"])["default"] == (
                     "topics" if help_bundle else "entities"

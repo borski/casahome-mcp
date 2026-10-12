@@ -243,7 +243,8 @@ def register_workflow_tools(action_tool: ActionToolDecorator) -> None:
     @action_tool(
         description=gated_description(
             "Rename a document, set its type or date, or clear its date with "
-            "clear_document_date=true. Supply at least one change.",
+            "clear_document_date=true. Read casa_get_document_details first. "
+            "Supply at least one change.",
             "update_document",
         ),
         annotations=PREPARE,
@@ -295,7 +296,8 @@ def register_workflow_tools(action_tool: ActionToolDecorator) -> None:
 
     @action_tool(
         description=gated_description(
-            "Start document analysis with an explicit reanalyze flag. No polling.",
+            "Read casa_get_document_details first. Start document analysis with an explicit "
+            "reanalyze flag. No polling.",
             "analyze_document",
         ),
         annotations=PREPARE,
@@ -327,7 +329,8 @@ def register_workflow_tools(action_tool: ActionToolDecorator) -> None:
 
     @action_tool(
         description=gated_description(
-            "Start document organization with a bodyless POST. No polling.",
+            "Read casa_get_document_details first. Start document organization with a bodyless "
+            "POST. No polling.",
             "organize_document",
         ),
         annotations=PREPARE,
@@ -395,7 +398,8 @@ def register_workflow_tools(action_tool: ActionToolDecorator) -> None:
 
     @action_tool(
         description=gated_description(
-            "Replace an availability request's integer slot windows. Units are unknown. "
+            "Replace an availability request's integer slot windows. One compiled editor uses "
+            "integer Unix seconds. Server units and semantics remain UNVERIFIED. "
             "[] is sent as []. May also submit the availability.",
             "update_availability_slots",
         ),
@@ -425,7 +429,8 @@ def register_workflow_tools(action_tool: ActionToolDecorator) -> None:
             {
                 "availability_request_id": availability_request_id,
                 **body.model_dump(mode="json"),
-                "risk": "Replaces slots and may finalize submission. Time units are unknown.",
+                "risk": "Replaces slots and may finalize submission. One compiled editor uses "
+                "integer Unix seconds. Server units and semantics remain UNVERIFIED.",
             },
             invoke,
         )

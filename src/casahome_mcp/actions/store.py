@@ -98,18 +98,31 @@ class ActionStore:
         preview: dict[str, JsonValue],
         invoke: Invocation,
         *,
-        size_bytes: int = 0,
+        retained_bytes: int = 0,
         snapshot_reservation: object | None = None,
     ) -> dict[str, JsonValue]:
+        preview_json = json.dumps(preview, ensure_ascii=False, sort_keys=True)
+        preview_bytes = len(preview_json.encode("utf-8"))
+        reserved_bytes = 0
         if snapshot_reservation is not None:
             reserved = self._snapshot_reservations.get(snapshot_reservation)
-            if reserved is None or not 0 < size_bytes <= reserved:
+            if reserved is None or not 0 < retained_bytes <= reserved:
                 raise action_error("CAPACITY_EXCEEDED")
-            # Synchronous transfer from finished worker to pending snapshot.
-            self.release_snapshot(snapshot_reservation)
-        self.check_capacity(size_bytes)
+            reserved_bytes = reserved
+        # Check the delta while the existing reservation is still charged.
+        self.purge()
+        if (
+            len(self._pending)
+            + len(self._snapshot_reservations)
+            - (1 if snapshot_reservation is not None else 0)
+            >= MAX_PENDING
+            or retained_bytes < 0
+            or self.remaining_bytes() < preview_bytes + retained_bytes - reserved_bytes
+        ):
+            raise action_error("CAPACITY_EXCEEDED")
         token = secrets.token_urlsafe(32)
-        preview_json = json.dumps(preview, ensure_ascii=False, sort_keys=True)
+        if snapshot_reservation is not None:
+            self.release_snapshot(snapshot_reservation)
         self._pending[token] = PendingAction(
             home_id,
             operation,
@@ -117,7 +130,7 @@ class ActionStore:
             preview_json,
             invoke,
             self._clock() + TTL_SECONDS,
-            size_bytes,
+            preview_bytes + retained_bytes,
         )
         return {
             "confirmation_token": token,

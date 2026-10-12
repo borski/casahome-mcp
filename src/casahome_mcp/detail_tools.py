@@ -1,4 +1,4 @@
-"""Explicit detail GET tools. The shared read guard owns all runtime policy."""
+"""Explicit detail GET tools. The shared read policy owns runtime gating."""
 
 from typing import Annotated, Literal
 
@@ -228,7 +228,7 @@ def register_detail_tools(server: MCPServer) -> None:
     @server.tool(
         description=describe(
             "One document's metadata and organization/extraction status. No filenames, owner, URL, "
-            "download, analysis or organization actions.",
+            "download, analysis or organization actions. Deletion prepare reads again separately.",
             "casa_get_document_details",
         ),
         annotations=remote,
@@ -280,7 +280,8 @@ def register_detail_tools(server: MCPServer) -> None:
         description=describe(
             "Existing structure suggestions, bounded labels/values, state "
             "and citation page labels. "
-            "Excerpts require include_excerpts=true. No inventory edits or responses.",
+            "Excerpts require include_excerpts=true. current_values_complete is advisory only. "
+            "Action preparation refetches and checks eligibility. No action on this read.",
             "casa_list_document_structure_suggestions",
         ),
         annotations=remote,
@@ -362,7 +363,8 @@ def register_detail_tools(server: MCPServer) -> None:
         description=describe(
             "Task metadata, description, flags and update metadata. Update message text requires "
             "include_messages=true. Attachments counted only. "
-            "No schedule, edit, delete or transfer.",
+            "Read only. Scalar edit has a separately gated prepare. "
+            "No schedule, delete or transfer.",
             "casa_get_task_details",
             items_unobserved=True,
         ),

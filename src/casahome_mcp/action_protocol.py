@@ -32,6 +32,14 @@ from casahome.models.preferences import (
     SchedulePreferencesResponse,
 )
 from casahome.models.read_todos import TodoDetailsResponse
+from casahome.models.recovered_contracts import (
+    HomeDocumentDeleteResponse,
+    UpdateRequestDetailBody,
+    UpdateRequestDetailResponse,
+    UpdateStoryBody,
+    UpdateTaskResponse,
+    UpdateTaskScalarBody,
+)
 from casahome.models.todos import CreateTodoBody
 from casahome.models.verified_writes import (
     MultiSelectAnswer,
@@ -62,6 +70,21 @@ from pydantic import JsonValue
 
 
 class CasaActionsProtocol(Protocol):
+    async def update_request_detail(
+        self, home_id: str, request_id: str, body: UpdateRequestDetailBody
+    ) -> UpdateRequestDetailResponse: ...
+    async def update_task(
+        self, home_id: str, task_id: str, body: UpdateTaskScalarBody
+    ) -> UpdateTaskResponse: ...
+    async def update_story(
+        self, home_id: str, story_id: str, body: UpdateStoryBody
+    ) -> BasicMessageResponse: ...
+    async def dismiss_document_structure_suggestion(
+        self, home_id: str, document_id: str, suggestion_id: str, expected_values: Sequence[str]
+    ) -> SavedResponse: ...
+    async def delete_document(
+        self, home_id: str, document_id: str
+    ) -> HomeDocumentDeleteResponse: ...
     async def add_mailbox_recipient(
         self,
         home_id: str,

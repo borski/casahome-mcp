@@ -145,6 +145,7 @@ class StructureSuggestionSummary(OutputModel):
     section: Text | None
     title: Text | None
     current_values: list[Text | None] = Field(max_length=20)
+    current_values_complete: bool
     current_label: Text | None
     proposed_label: Text | None
     reason: Brief | None

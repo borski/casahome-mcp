@@ -46,6 +46,7 @@ from casahome_mcp.outputs import (
     RequestsData,
     RoomSummary,
     StatusData,
+    StorySummary,
     TodoSummary,
     ToolResponse,
     WeatherData,
@@ -565,6 +566,30 @@ def test_inventory_rooms_keep_story_context_and_source_order() -> None:
     }
     assert warnings == [COMPLETENESS]
     _assert_private(data)
+
+
+def test_story_readback_includes_empty_stories_and_rejects_unsafe_names() -> None:
+    model = _inventory()
+    model.home.stories.append(
+        model.home.stories[0].model_copy(update={"id": "empty-story", "name": "Empty", "rooms": []})
+    )
+    stories, warnings = project_inventory(model, kind="stories")
+    assert all(isinstance(item, StorySummary) for item in stories.page.items)
+    counts = [item.room_count for item in stories.page.items if isinstance(item, StorySummary)]
+    assert counts == [1, 0]
+    assert warnings == [COMPLETENESS]
+    assert all(
+        item.story_metadata_complete
+        for item in stories.page.items
+        if isinstance(item, StorySummary)
+    )
+    model.home.stories[0].name = "https://example.invalid/private"
+    stories, warnings = project_inventory(model, kind="stories")
+    first = stories.page.items[0]
+    assert isinstance(first, StorySummary)
+    assert first.name is None and first.story_metadata_complete is False
+    assert "STORY_NAME_OMITTED" in warnings
+    assert "example.invalid" not in stories.model_dump_json()
 
 
 def test_nested_id_lists_are_capped_but_identities_are_never_clipped() -> None:

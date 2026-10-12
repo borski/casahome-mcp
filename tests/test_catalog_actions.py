@@ -109,7 +109,7 @@ def test_sdk_write_coverage_and_read_manifest_stay_separate() -> None:
     assert len(TOOL_METHODS) == 55 and len(READ_METHODS) == 54
     assert not ACTION_METHODS & READ_METHODS
     readme = (Path(__file__).parents[1] / "README.md").read_text()
-    assert "104 tools: 57 read/local tools plus 45 action prepares, execute and cancel." in readme
+    assert "109 tools: 57 read/local tools plus 50 action prepares, execute and cancel." in readme
     for operation in ("update_entity_make_model", "rename_room"):
         assert not is_unverified(getattr(CasaApi, operation))
         assert not action_unverified(operation)
@@ -433,6 +433,46 @@ async def test_catalog_rejection_through_actual_sdk_is_attempted_once(mode: str,
         )
     ]
     assert h.fake.calls == []
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("tool", [LEGACY_TOOL, MAKE_MODEL_TOOL])
+@pytest.mark.parametrize("response_kind", ["missing", "null", "malformed", "no_identity"])
+async def test_publish_response_compatibility_preserves_private_one_shot_execution(
+    mode: str, tool: str, response_kind: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    response: dict[str, object] = {
+        key: value for key, value in PUBLISHED.items() if key not in {"make", "model"}
+    }
+    if response_kind == "null":
+        response.update({"make": None, "model": None})
+    elif response_kind == "malformed":
+        response["model"] = {"name": {"secret": SECRET}}
+    elif response_kind == "no_identity":
+        del response["identity"]
+    h = harness(messages=False, uploads=False, unverified=False)
+    recorder = RecordingClient(response)
+    h.app.actions = CasaApi(cast(CasaClient, recorder))
+    async with Client(h.server, mode=mode) as client:
+        prepared = success(
+            await client.call_tool(tool, {"entity_id": ENTITY, "model_name": "Example"})
+        )
+        assert recorder.requests == []
+        call = {"confirmation_token": token(prepared), "confirmed": False}
+        assert success(await client.call_tool("casa_execute_action", call))["outcome"] == (
+            "NOT_EXECUTED"
+        )
+        assert recorder.requests == []
+        call["confirmed"] = True
+        completed = success(await client.call_tool("casa_execute_action", call))
+        assert completed["outcome"] == (
+            "SUCCEEDED" if response_kind in {"missing", "null"} else "UNKNOWN"
+        )
+        assert SECRET not in json.dumps(completed)
+        failed(await client.call_tool("casa_execute_action", call), "INVALID_CONFIRMATION")
+    assert len(recorder.requests) == 1
+    assert h.fake.calls == []
+    assert SECRET not in caplog.text
 
 
 @pytest.mark.parametrize("mode", MODES)

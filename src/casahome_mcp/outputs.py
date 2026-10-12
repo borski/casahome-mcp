@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Source = Literal["configuration", "runtime", "casa"]
 Confidence = Literal["LOCAL", "UNVERIFIED", "VERIFIED"]
-InventoryKind = Literal["entities", "rooms"]
+InventoryKind = Literal["entities", "rooms", "stories"]
 RequestLane = Literal["requests", "todos"]
 
 
@@ -97,6 +97,14 @@ class RoomSummary(OutputModel):
     room_type_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,128}$")
 
 
+class StorySummary(OutputModel):
+    id: str
+    name: str | None = Field(max_length=256)
+    story_metadata_complete: bool
+    floor_number: int
+    room_count: int = Field(ge=0)
+
+
 class EntityPropertySummary(OutputModel):
     """One non-null entity property, value rendered as bounded text."""
 
@@ -124,7 +132,7 @@ class EntitySummary(OutputModel):
 
 class InventoryData(OutputModel):
     kind: InventoryKind
-    page: Page[EntitySummary | RoomSummary]
+    page: Page[EntitySummary | RoomSummary | StorySummary]
 
 
 class InventoryItemData(OutputModel):

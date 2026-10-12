@@ -17,7 +17,12 @@ from mcp.server.mcpserver.utilities.func_metadata import FuncMetadata
 from mcp.types import CallToolResult, TextContent
 from pydantic import ValidationError
 
-from .actions.models import CATALOG_SELECTION_FIELDS, CONTENT_FIELDS
+from .actions.models import (
+    CATALOG_SELECTION_FIELDS,
+    CONTENT_FIELDS,
+    NO_NULL_ACTION_FIELDS,
+    NONBLANK_ACTION_FIELDS,
+)
 
 
 def safe_strings(value: object, content_fields: set[str], field: str = "") -> bool:
@@ -60,6 +65,16 @@ def input_guard(
         if not safe_strings(arguments, CONTENT_FIELDS.get(name, set())):
             return refusal()
         if isinstance(arguments, dict):
+            if any(
+                isinstance(arguments.get(key), str) and not arguments[key].strip()
+                for key in NONBLANK_ACTION_FIELDS.get(name, frozenset())
+            ):
+                return refusal()
+            if any(
+                key in arguments and arguments[key] is None
+                for key in NO_NULL_ACTION_FIELDS.get(name, frozenset())
+            ):
+                return refusal()
             # JSON Schema accepts 1.0 as an integer, strict Pydantic doesn't.
             for key in ("offset", "limit", "page", "page_size", "upstream_limit"):
                 if (
@@ -122,6 +137,8 @@ def input_guard(
                 # Nullable action text and IDs. A JSON-looking string must never
                 # become null, an object or an array before strict validation.
                 "title",
+                "description",
+                "read_state",
                 "prepared_brief",
                 "emoji",
                 "name",

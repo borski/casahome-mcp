@@ -1,6 +1,7 @@
 """Offline upload deadline/lease regressions. Only synthetic regular-file fixtures."""
 
 import asyncio
+import json
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -128,7 +129,9 @@ async def test_actual_mcp_snapshot_timeout_no_late_token_or_write(
             await client.call_tool("casa_prepare_upload_document", arguments(fixture_path))
         )
         assert "confirmation_token" in prepared
-        assert h.app.action_store.remaining_bytes() == MAX_BYTES - 7
+        assert h.app.action_store.remaining_bytes() == MAX_BYTES - 7 - len(
+            json.dumps(prepared["preview"], ensure_ascii=False, sort_keys=True).encode("utf-8")
+        )
         assert actions.calls == []
     assert SECRET not in caplog.text
 

@@ -55,6 +55,11 @@ ACTION_METHODS = frozenset(
         "create_paint_from_library",
         "clear_ai_message_rating",
         "update_entity_properties",
+        "update_request_detail",
+        "update_task",
+        "update_story",
+        "dismiss_document_structure_suggestion",
+        "delete_document",
     }
 )
 """Exact SDK write allowlist. Confidence comes from the SDK marker, never this list."""

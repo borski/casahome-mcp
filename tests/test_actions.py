@@ -37,6 +37,17 @@ from casahome_mcp.config import ConfigurationError, Settings
 from casahome_mcp.coverage_projections import project_ai_history
 
 CASES: tuple[tuple[str, dict[str, object]], ...] = (
+    ("update_request_detail", {"request_id": "request-one", "title": "New title"}),
+    ("update_task", {"task_id": "task-one", "description": "New description"}),
+    ("update_story", {"story_id": "story-one", "floor_number": 0}),
+    (
+        "dismiss_document_structure_suggestion",
+        {
+            "document_id": "doc-one",
+            "suggestion_id": "suggestion-one",
+        },
+    ),
+    ("delete_document", {"document_id": "doc-one"}),
     *WORKFLOW_CASES,
     ("move_entity_to_room", {"entity_id": ENTITY, "room_id": HOME}),
     ("rate_ai_message", {"message_id": "message-one", "rating": "good"}),
@@ -97,7 +108,6 @@ CASES: tuple[tuple[str, dict[str, object]], ...] = (
             "document_id": "doc-one",
             "suggestion_id": "suggestion-one",
             "decision": "accepted",
-            "expected_values": [],
         },
     ),
 )
@@ -132,6 +142,15 @@ def token(payload: dict[str, object]) -> str:
     return value
 
 
+def read_context(h: Harness, operation: str) -> None:
+    if operation in {
+        "dismiss_document_structure_suggestion",
+        "respond_to_document_structure_suggestion",
+    }:
+        h.fake.structure_suggestions.suggestions[0].id = "suggestion-one"
+        h.fake.structure_suggestions.suggestions[0].state = "pending"
+
+
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("operation,arguments", CASES)
 async def test_prepare_then_false_then_execute_then_replay(
@@ -142,9 +161,10 @@ async def test_prepare_then_false_then_execute_then_replay(
     h = harness()
     actions = FakeActions(h.fake)
     h.app.actions = actions
+    read_context(h, operation)
     async with Client(h.server, mode=mode) as client:
         prepared = success(await client.call_tool("casa_prepare_" + operation, arguments))
-        assert h.fake.calls == actions.calls == []
+        assert actions.calls == []
         assert prepared["home_id"] == HOME
         assert prepared["expires_in_seconds"] == 300
         assert "NOT proof" in str(prepared["warning"])
@@ -156,13 +176,20 @@ async def test_prepare_then_false_then_execute_then_replay(
         assert actions.calls == []
         call["confirmed"] = True
         completed = success(await client.call_tool("casa_execute_action", call))
-        assert completed["outcome"] == "SUCCEEDED"
+        assert completed["outcome"] == ("UNKNOWN" if operation == "update_story" else "SUCCEEDED")
         assert SECRET not in json.dumps(completed)
         if operation == "create_todo_result":
             assert completed["needs_support_confirmation"] is True
         failed(await client.call_tool("casa_execute_action", call), "INVALID_CONFIRMATION")
         assert [name for name, _ in actions.calls] == [operation]
-        assert h.fake.calls == []
+        if operation in {
+            "delete_document",
+            "dismiss_document_structure_suggestion",
+            "respond_to_document_structure_suggestion",
+        }:
+            assert len(h.fake.calls) == 1
+        else:
+            assert h.fake.calls == []
 
 
 @pytest.mark.parametrize("operation,arguments", CASES)
@@ -278,9 +305,12 @@ def test_store_expiry_cancel_capacity_and_private_errors() -> None:
     with pytest.raises(ToolError, match="CAPACITY_EXCEEDED"):
         store.add(HOME, "delete_todo", "actions", preview, noop)
     store.clear()
-    large = store.add(HOME, "upload_document", "uploads", preview, noop, size_bytes=MAX_BYTES)
+    preview_bytes = len(json.dumps(preview, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+    large = store.add(
+        HOME, "upload_document", "uploads", preview, noop, retained_bytes=MAX_BYTES - preview_bytes
+    )
     with pytest.raises(ToolError, match="CAPACITY_EXCEEDED"):
-        store.add(HOME, "upload_document", "uploads", preview, noop, size_bytes=1)
+        store.add(HOME, "upload_document", "uploads", preview, noop, retained_bytes=1)
     large_token = large["confirmation_token"]
     assert isinstance(large_token, str)
     store.consume(large_token)
@@ -451,10 +481,6 @@ async def test_manifest_exact_and_action_annotations() -> None:
         ),
         (
             "respond_to_document_structure_suggestion",
-            {"document_id": "one", "suggestion_id": "two", "decision": "accepted"},
-        ),
-        (
-            "respond_to_document_structure_suggestion",
             {
                 "document_id": "one",
                 "suggestion_id": "two",
@@ -486,7 +512,7 @@ async def test_narrow_scope_and_private_prehandler_validation(
     h.app.actions = fake
     async with Client(h.server, mode=mode) as client:
         failed(await client.call_tool("casa_prepare_" + operation, arguments), "INVALID_ARGUMENT")
-    assert fake.calls == h.fake.calls == []
+        assert fake.calls == h.fake.calls == []
     assert SECRET not in caplog.text
 
 
@@ -525,7 +551,14 @@ async def test_cancel_upload_releases_bytes_and_shutdown_clears_store(tmp_path: 
             "find_todos": True,
         }
         prepared = success(await client.call_tool("casa_prepare_upload_document", args))
-        assert h.app.action_store.remaining_bytes() == MAX_BYTES - 7
+        assert (
+            h.app.action_store.remaining_bytes()
+            == MAX_BYTES
+            - len(
+                json.dumps(prepared["preview"], ensure_ascii=False, sort_keys=True).encode("utf-8")
+            )
+            - 7
+        )
         call = {"confirmation_token": token(prepared)}
         cancelled = success(await client.call_tool("casa_cancel_action", call))
         assert cancelled["outcome"] == "CANCELLED"

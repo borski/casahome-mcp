@@ -9,6 +9,7 @@ from casahome.models.catalogs import InventoryEnumsResponse
 from casahome.models.documents import (
     DocumentCitation,
     DocumentDetailsResponse,
+    DocumentStructureSuggestion,
     DocumentStructureSuggestionsResponse,
     DocumentSuggestionsResponse,
 )
@@ -87,6 +88,7 @@ from .detail_outputs import (
     VisitVendorSummary,
 )
 from .projections import _warn, validate_pagination
+from .safe_values import exact_safe_text
 
 
 def project_bookable_handyman_tasks(
@@ -324,26 +326,37 @@ def project_document_structure_suggestions(
     limit: int = 25,
 ) -> tuple[StructureSuggestionsData, list[str]]:
     warnings = ["UPSTREAM_COMPLETENESS_UNKNOWN"]
+
+    def structure_item(item: DocumentStructureSuggestion) -> StructureSuggestionSummary:
+        # A displayed clipped or unsafe value is never an exact preparation value.
+        values = [text(value, warnings) for value in nested(item.current_values, warnings)]
+        complete = len(values) == len(item.current_values) and all(
+            projected == original and exact_safe_text(original, maximum=10_000)
+            for projected, original in zip(values, item.current_values, strict=False)
+        )
+        if not complete:
+            _warn(warnings, "INCOMPLETE_CURRENT_VALUES_NOT_SAFE_AS_GUARD")
+        return StructureSuggestionSummary(
+            id=identity(item.id, warnings),
+            entity_id=identity(item.entity_id, warnings),
+            definition_id=identity(item.definition_id, warnings),
+            responded_at=item.responded_at,
+            section=text(item.section, warnings),
+            title=text(item.title, warnings),
+            current_values=values,
+            current_values_complete=complete,
+            current_label=text(item.current_label, warnings),
+            proposed_label=text(item.proposed_label, warnings),
+            reason=text(item.reason, warnings, 2000),
+            state=text(item.state, warnings),
+            changed_since_analysis=item.changed_since_analysis,
+            citations=_citations(item.citations, include_excerpts, warnings),
+        )
+
     return StructureSuggestionsData(
         page=local_page(
             model.suggestions,
-            lambda item: StructureSuggestionSummary(
-                id=identity(item.id, warnings),
-                entity_id=identity(item.entity_id, warnings),
-                definition_id=identity(item.definition_id, warnings),
-                responded_at=item.responded_at,
-                section=text(item.section, warnings),
-                title=text(item.title, warnings),
-                current_values=[
-                    text(value, warnings) for value in nested(item.current_values, warnings)
-                ],
-                current_label=text(item.current_label, warnings),
-                proposed_label=text(item.proposed_label, warnings),
-                reason=text(item.reason, warnings, 2000),
-                state=text(item.state, warnings),
-                changed_since_analysis=item.changed_since_analysis,
-                citations=_citations(item.citations, include_excerpts, warnings),
-            ),
+            structure_item,
             warnings,
             offset,
             limit,

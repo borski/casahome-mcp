@@ -1,7 +1,7 @@
 """Shared prepare/execute machinery for every named action module."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, TypeVar
 
 from casahome.exceptions import CasaApiError
@@ -10,8 +10,8 @@ from mcp.server.mcpserver.utilities.func_metadata import FuncMetadata, func_meta
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, JsonValue, ValidationError
 
-from ..errors import failure
-from ..runtime import AppContext
+from ..errors import failure, mapped_failure
+from ..runtime import AppContext, CasaReads
 from ..tools import resolve_home
 from .models import CATALOG_REJECTION_WARNING, ActionResult
 from .policy import ACTION_METHODS, UNVERIFIED_CONTRACT_WARNING, action_unverified
@@ -44,6 +44,13 @@ CANCEL = ToolAnnotations(
 
 F = TypeVar("F", bound=Callable[..., object])
 M = TypeVar("M", bound=BaseModel)
+R = TypeVar("R")
+READ_PREPARE = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=False,
+    open_world_hint=True,
+)
 
 
 class ActionToolDecorator(Protocol):
@@ -119,6 +126,8 @@ def prepare(
     preview: dict[str, JsonValue],
     invoke: Invocation,
     group: Group = "actions",
+    *,
+    retained_bytes: int = 0,
 ) -> dict[str, JsonValue]:
     if operation not in ACTION_METHODS:
         raise failure("INTERNAL_ERROR")
@@ -126,7 +135,38 @@ def prepare(
     if action_unverified(operation):
         # Derived from the SDK marker, so no prepare can omit it.
         preview = {**preview, "contract_warning": UNVERIFIED_CONTRACT_WARNING}
-    return app.action_store.add(home, operation, group, preview, invoke)
+    return app.action_store.add(
+        home, operation, group, preview, invoke, retained_bytes=retained_bytes
+    )
+
+
+async def prepare_from_read(
+    app: AppContext,
+    home_id: str | None,
+    operation: str,
+    read: Callable[[CasaReads, str], Awaitable[R]],
+    finalize: Callable[[str, R], tuple[dict[str, JsonValue], Invocation, int]],
+) -> dict[str, JsonValue]:
+    """Bound read, synchronous validation and token issuance by one deadline."""
+    try:
+        deadline = asyncio.get_running_loop().time() + app.deadline_seconds
+        async with asyncio.timeout(app.deadline_seconds), app.semaphore:
+            home = authorize(app, home_id, "actions", operation)
+            if app.api is None:
+                raise failure("AUTH_NOT_CONFIGURED")
+            response = await read(app.api, home)
+            preview, invoke, retained = finalize(home, response)
+            if asyncio.get_running_loop().time() >= deadline:
+                raise failure("TIMEOUT")
+            prepared = prepare(app, home, operation, preview, invoke, retained_bytes=retained)
+            if asyncio.get_running_loop().time() >= deadline:
+                token = prepared["confirmation_token"]
+                if isinstance(token, str):
+                    app.action_store.consume(token)
+                raise failure("TIMEOUT")
+            return prepared
+    except Exception as exc:
+        raise mapped_failure(exc) from None
 
 
 async def execute(app: AppContext, token: str, confirmed: bool) -> ActionResult:

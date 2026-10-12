@@ -148,12 +148,14 @@ class CasaReads(Protocol):
     async def availability_request_details(
         self, home_id: str, availability_request_id: str
     ) -> MemberAvailabilityDetail: ...
-    async def document_details(self, home_id: str, document_id: str) -> DocumentDetailsResponse: ...
+    async def document_details(
+        self, home_id: str, document_id: str, *, retry_on_401: bool = True
+    ) -> DocumentDetailsResponse: ...
     async def document_suggestions(
         self, home_id: str, document_id: str, *, view: str | None = None
     ) -> DocumentSuggestionsResponse: ...
     async def document_structure_suggestions(
-        self, home_id: str, document_id: str
+        self, home_id: str, document_id: str, *, retry_on_401: bool = True
     ) -> DocumentStructureSuggestionsResponse: ...
     async def inventory_paint_matches(
         self, home_id: str, entity_id: str

@@ -312,7 +312,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.26,<5" },
     { name = "mcp", specifier = ">=2,<3" },
     { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "python-casahome", editable = "../python-casahome" },
+    { name = "python-casahome", specifier = ">=0.3,<0.4" },
 ]
 
 [package.metadata.requires-dev]
@@ -1467,24 +1467,14 @@ wheels = [
 [[package]]
 name = "python-casahome"
 version = "0.3.0"
-source = { editable = "../python-casahome" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "pydantic" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiohttp", specifier = ">=3.9" },
-    { name = "pydantic", specifier = ">=2.5" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.10" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-asyncio", specifier = ">=0.23" },
-    { name = "ruff", specifier = ">=0.6" },
+sdist = { url = "https://files.pythonhosted.org/packages/fd/9f/7ccbea6c194f66483fc1922215486ad655ab624340706bea60190083d657/python_casahome-0.3.0.tar.gz", hash = "sha256:bc5f2e15853494ffd64b3cb8a52dfefb2853cff026bb2cc914620cb9f74a68b1", size = 252574, upload-time = "2026-10-12T16:57:38.044Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/53/29/d4f559aa5f58bcaca96a80b11c07ba01e7997e9bdb71ef058764534242e9/python_casahome-0.3.0-py3-none-any.whl", hash = "sha256:7880a8b82c7cddcc4a10bf5142b56d1f4cd0dccfcb012bc1cdf8b6927e6203c1", size = 99185, upload-time = "2026-10-12T16:57:36.873Z" },
 ]
 
 [[package]]

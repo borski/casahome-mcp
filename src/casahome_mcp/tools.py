@@ -290,7 +290,8 @@ def register_tools(server: MCPServer) -> None:
 
     @server.tool(
         description=describe(
-            "Rooms or entities with bounded make/model/serial and scalar properties. "
+            "Stories, rooms or entities. Stories include empty stories and safe nullable names. "
+            "Rooms omit generic room properties. No images or URLs. "
             "Entity filters: exact room ID/name and category label. "
             "Catalog text requires include_model_summary=true.",
             "casa_list_inventory",
@@ -308,7 +309,9 @@ def register_tools(server: MCPServer) -> None:
         category: InventoryFilter = None,
         include_model_summary: bool = False,
     ) -> ToolResponse[InventoryData]:
-        if kind == "rooms" and (room is not None or category is not None or include_model_summary):
+        if kind != "entities" and (
+            room is not None or category is not None or include_model_summary
+        ):
             raise failure("INVALID_ARGUMENT")
         return await read(
             ctx.request_context.lifespan_context,

@@ -36,6 +36,7 @@ class DetailFake:
         raise NotImplementedError
 
     def init_details(self) -> None:
+        self.retry_flags: list[tuple[str, bool]] = []
         self.bookable = BookableHandymanTasksResponse.model_validate(
             {
                 "items": [{"kind": "task", "id": SECRET}, {"unknown": URL}, SECRET, None],
@@ -199,6 +200,8 @@ class DetailFake:
                 "suggestions": [
                     {
                         "id": "structure-one",
+                        "entity_id": "entity-one",
+                        "definition_id": "definition-one",
                         "section": "synthetic",
                         "title": "Synthetic structure",
                         "current_values": ["one"],
@@ -562,7 +565,10 @@ class DetailFake:
         await self._before("availability_request_details", home_id, availability_request_id)
         return self.availability
 
-    async def document_details(self, home_id: str, document_id: str) -> DocumentDetailsResponse:
+    async def document_details(
+        self, home_id: str, document_id: str, *, retry_on_401: bool = True
+    ) -> DocumentDetailsResponse:
+        self.retry_flags.append(("document_details", retry_on_401))
         await self._before("document_details", home_id, document_id)
         return self.document
 
@@ -573,8 +579,9 @@ class DetailFake:
         return self.doc_suggestions
 
     async def document_structure_suggestions(
-        self, home_id: str, document_id: str
+        self, home_id: str, document_id: str, *, retry_on_401: bool = True
     ) -> DocumentStructureSuggestionsResponse:
+        self.retry_flags.append(("document_structure_suggestions", retry_on_401))
         await self._before("document_structure_suggestions", home_id, document_id)
         return self.structure_suggestions
 

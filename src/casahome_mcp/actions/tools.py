@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
 
+from casahome.models.documents import DocumentStructureSuggestionsResponse
 from casahome.models.entity_publish import SaveAndPublishEntityRequest
 from casahome.models.mail_workflows import AddMailboxRecipientRequest, MailboxAutoArchiveRequest
 from casahome.models.verified_writes import (
@@ -36,6 +37,7 @@ from .core import (
     CANCEL,
     EXECUTE,
     PREPARE,
+    READ_PREPARE,
     UPLOAD_PREPARE,
     authorize,
     build,
@@ -43,6 +45,7 @@ from .core import (
     execute,
     make_action_tool,
     prepare,
+    prepare_from_read,
     preview_body,
     result,
 )
@@ -51,7 +54,6 @@ from .models import (
     ActionResult,
     Answer,
     Content,
-    ExpectedValues,
     MailboxArchiveDays,
     Notifications,
     PathId,
@@ -61,7 +63,13 @@ from .models import (
     Token,
 )
 from .policy import ACTION_METHODS, ACTION_TOOLS
-from .store import action_error
+from .recovered_tools import (
+    STRUCTURE_RISK,
+    not_applied,
+    register_recovered_tools,
+    suggestion_context,
+)
+from .store import Invocation, action_error
 from .uploads import LOCAL_FILE_CAP, SnapshotWorker, snapshot_file
 from .workflow_tools import register_workflow_tools
 
@@ -149,7 +157,7 @@ async def prepare_upload_document(
                 "uploads",
                 preview,
                 invoke,
-                size_bytes=len(content),
+                retained_bytes=len(content),
                 snapshot_reservation=worker.reservation,
             )
     except TimeoutError:
@@ -172,6 +180,7 @@ def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
     action_tool = make_action_tool(server, validators)
     register_workflow_tools(action_tool)
     register_inventory_tools(action_tool)
+    register_recovered_tools(action_tool)
 
     @action_tool(
         description=description(
@@ -633,44 +642,68 @@ def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
 
     @action_tool(
         description=description(
-            "Accept document structure suggestion. Supply current_values as expected_values, "
-            "preserving order and text. No dismissal or automatic refetch/retry."
+            "Accept a document structure suggestion. Preparation performs one single-attempt Casa "
+            "request and checks complete exact context and exact safe current values. State can "
+            "change and expected_values may only guard current values. "
+            "No account mutation during preparation, no second read during execution and no "
+            "automatic conflict retry or replacement. saved=false is NOT_APPLIED."
         ),
-        annotations=PREPARE,
+        annotations=READ_PREPARE,
         structured_output=True,
     )
     async def casa_prepare_respond_to_document_structure_suggestion(
         document_id: PathId,
         suggestion_id: PathId,
-        decision: Literal["accepted"],
-        expected_values: ExpectedValues,
         ctx: Context[AppContext],
+        decision: Literal["accepted"] = "accepted",
         home_id: HomeId = None,
     ) -> dict[str, JsonValue]:
-        body = RespondToDocumentStructureSuggestionRequest(
-            decision=decision, expected_values=expected_values
-        )
-        snapshot = body.model_dump_json()
+        app = ctx.request_context.lifespan_context
 
-        async def invoke(api: CasaActionsProtocol, home: str) -> ActionResult:
-            validated = RespondToDocumentStructureSuggestionRequest.model_validate_json(snapshot)
-            response = await api.respond_to_document_structure_suggestion(
-                home,
-                document_id,
-                suggestion_id,
-                validated.expected_values,
-                decision=validated.decision,
+        def finalize(
+            home: str, response: DocumentStructureSuggestionsResponse
+        ) -> tuple[dict[str, JsonValue], Invocation, int]:
+            values, context = suggestion_context(response, suggestion_id)
+            body = RespondToDocumentStructureSuggestionRequest(
+                decision=decision, expected_values=values
             )
-            if not response.saved:
-                raise ValueError("Unconfirmed action outcome")
-            return result(home, "respond_to_document_structure_suggestion")
+            snapshot = body.model_dump_json()
 
-        return prepare(
-            ctx.request_context.lifespan_context,
+            async def invoke(api: CasaActionsProtocol, selected: str) -> ActionResult:
+                validated = RespondToDocumentStructureSuggestionRequest.model_validate_json(
+                    snapshot
+                )
+                saved = await api.respond_to_document_structure_suggestion(
+                    selected,
+                    document_id,
+                    suggestion_id,
+                    validated.expected_values,
+                    decision=validated.decision,
+                )
+                if not saved.saved:
+                    return not_applied(selected, "respond_to_document_structure_suggestion")
+                return result(selected, "respond_to_document_structure_suggestion")
+
+            return (
+                {
+                    "document_id": document_id,
+                    "suggestion_id": suggestion_id,
+                    **preview_body(body),
+                    "suggestion_context": context,
+                    "risk": STRUCTURE_RISK,
+                },
+                invoke,
+                len(snapshot.encode("utf-8")),
+            )
+
+        return await prepare_from_read(
+            app,
             home_id,
             "respond_to_document_structure_suggestion",
-            {"document_id": document_id, "suggestion_id": suggestion_id, **preview_body(body)},
-            invoke,
+            lambda reads, home: reads.document_structure_suggestions(
+                home, document_id, retry_on_401=False
+            ),
+            finalize,
         )
 
     @action_tool(
@@ -704,8 +737,9 @@ def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
             "Execute one prepared action once. Show the exact preview and obtain specific "
             "user approval first. confirmed=True isn't proof of consent. Operator gates and "
             "home allowlist are rechecked. False makes zero calls and preserves the token. "
-            "UNKNOWN means the action may have happened. REJECTED_UNKNOWN_PRODUCT doesn't "
-            "prove complete rollback. Reconcile before any new retry. "
+            "UNKNOWN means the action may have happened. NOT_APPLIED (a false saved/deleted "
+            "result) and REJECTED_UNKNOWN_PRODUCT don't prove complete rollback. "
+            "Reconcile before any new retry. "
             "Never automatically retry or prepare a replacement."
         ),
         annotations=EXECUTE,

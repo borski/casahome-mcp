@@ -33,23 +33,17 @@ token. Read tools don't perform Casa writes.
 
 ## Install
 
-### TEMPDEV release blocker
+Requires Python 3.11+. Install from PyPI:
 
-This checkout is **0.2.0, local only**. It requires `python-casahome>=0.3,<0.4`.
-SDK 0.3 isn't published to PyPI yet. `[tool.uv.sources]` temporarily selects the
-editable sibling `../python-casahome`. The lockfile records that local dependency.
-Don't tag, publish or recommend this development version as a PyPI install.
-Before release, publish/review SDK 0.3 separately, remove the temporary source,
-relock against the published SDK and rerun the full offline validation suite.
+```sh
+uvx casahome-mcp
+```
 
-Requires Python 3.11+. Run this checkout with:
+Run this checkout with:
 
 ```sh
 uv run --locked casahome-mcp
 ```
-
-Previously published versions can still be installed from PyPI with `uvx`.
-They don't provide the action tools described here.
 
 `python -m casahome_mcp` is an equivalent entry point. The command starts a
 stdio server that waits for an MCP host. It isn't an interactive shell.
@@ -135,7 +129,7 @@ authenticates and authorizes the account.
 
 ## Tools
 
-104 tools: 57 read/local tools plus 45 action prepares, execute and cancel.
+109 tools: 57 read/local tools plus 50 action prepares, execute and cancel.
 55 remote reads use 54 SDK methods. "Gated" read tools
 are disabled unless `CASA_ALLOW_UNVERIFIED_READS=true`. Gating comes from the
 SDK's evidence marker (`casahome.is_unverified`), so it changes automatically
@@ -218,7 +212,7 @@ by either unverified gate (reads and actions) in `disabled_features`.
 | `casa_list_document_types` | | Document types and upload limits |
 | `casa_get_document_details` | | One document's metadata and processing status |
 | `casa_list_document_suggestions` | | Existing suggestions. Optional `view`, default `all`. No other view values. |
-| `casa_list_document_structure_suggestions` | | Existing structure suggestions and guard values. Excerpts opt-in. |
+| `casa_list_document_structure_suggestions` | | Existing structure suggestions and advisory value completeness. Excerpts opt-in. |
 | `casa_get_work_document_source` | | Source documents and citations for a todo, task or request. Excerpts opt-in. |
 | `casa_get_help_center_bundle` | | Help topics or articles by app ID. Article body opt-in. |
 | `casa_get_release_notes_diff` | | Release notes newer than the SDK's app build. Content opt-in. |
@@ -257,13 +251,18 @@ They never perform a Casa write:
 | `casa_prepare_update_entity_model` | Nonblank model name with empty props only |
 | `casa_prepare_update_entity_make_model` | Make and/or model. One canonical UUID or name per supplied side, at least one side. Empty props only. |
 | `casa_prepare_rename_room` | Existing room UUID, required `room_type_id` and name. Both fields are sent, no creation. |
-| `casa_prepare_respond_to_document_structure_suggestion` | Required `accepted` decision and exact `expected_values` |
+| `casa_prepare_respond_to_document_structure_suggestion` | `accepted` decision (default). Prepare reads suggestions once and checks eligibility and exact safe current values. No caller-supplied expected values |
 | `casa_prepare_add_mailbox_recipient` | Explicit first and last names only, each 1 to 256 characters. No business/kind/primary fields. |
 | `casa_prepare_update_mailbox_auto_archive` | Required `mailbox_auto_archive_days`, exactly integer `30` or explicit `null` only |
 
 Make/model and rename prepares currently require ACTIONS only, following the SDK's
 evidence marker. If either method becomes unverified, its gate, description and
-preview warning follow that marker. Make/model names and room names are 1 to 256
+preview warning follow that marker. This method-level marker isn't traffic
+verification of every input variant. In particular, model-ID selection has static
+codec evidence, but its traffic provenance remains UNVERIFIED. Existing gates
+are unchanged. The compiled clear case encodes explicit null, but server clearing
+semantics remain UNVERIFIED and no clear operation is exposed.
+Make/model names and room names are 1 to 256
 characters, nonblank, without control characters. SDK body validation runs before
 a token is allocated. Names are sent as given, without trimming. Make/model names
 are matched against Casa's catalog and may be stored under different canonical
@@ -299,6 +298,11 @@ marker, so a promoted method automatically needs ACTIONS only.
 | Tool | Scope |
 |---|---|
 | `casa_prepare_update_todo` | Title, prepared brief or emoji. At least one. No attachments |
+| `casa_prepare_update_request_detail` | Read request detail first. Optional title and read/unread state, at least one. Omitted fields aren't sent |
+| `casa_prepare_update_task` | Caller-supplied task ID. Task detail pre-read requires unverified reads. Scalar edits only. No attachments or guessed task lane |
+| `casa_prepare_update_story` | Read stories first. Name or bounded integer floor (-1000 to 1000, local policy). Message response gives UNKNOWN |
+| `casa_prepare_dismiss_document_structure_suggestion` | Prepare reads suggestions once and checks eligibility and exact safe current values. No caller-supplied expected values or automatic retry |
+| `casa_prepare_delete_document` | Prepare reads document detail once for exact ID and safe name. Permanent deletion. State can change before execution, no revision guard. Related work and storage cleanup unknown |
 | `casa_prepare_reject_suggested_todo` | Optional `dismissed` or `already_handled` reason |
 | `casa_prepare_confirm_todo_support` | Explicit `is_support_question` Boolean |
 | `casa_prepare_retry_todo` | Bodyless retry of todo preparation |
@@ -307,7 +311,7 @@ marker, so a promoted method automatically needs ACTIONS only.
 | `casa_prepare_analyze_document` | Explicit `reanalyze` Boolean |
 | `casa_prepare_organize_document` | Bodyless organization start |
 | `casa_prepare_update_schedule_preferences` | Both lists required, days 0 to 7 (at most 7), window IDs |
-| `casa_prepare_update_availability_slots` | Up to 100 integer windows, units unknown |
+| `casa_prepare_update_availability_slots` | Up to 100 integer windows. One compiled editor uses Unix seconds. Server units and semantics remain UNVERIFIED. |
 | `casa_prepare_cancel_vendor_visit` | Warns of possible cancellation fees. Not undoable |
 | `casa_prepare_remove_mailbox_recipient` | One recipient ID |
 | `casa_prepare_mark_mail_item_read` / `_unread` | One mail item ID |
@@ -323,6 +327,34 @@ marker, so a promoted method automatically needs ACTIONS only.
 | `casa_prepare_update_entity_properties` | Up to 50 props, each exactly one of `value`, `enum_id` or `multi_enums` |
 | `casa_prepare_clear_ai_message_rating` | One AI message ID. The unknown response is discarded |
 | `casa_prepare_update_access_preferences` | Verified SDK contract, ACTIONS only. All four fields required, each may be `null` |
+
+These five new prepares remain unverified against Casa. Their optional scalar
+fields omit missing inputs and refuse explicit null. Dismissal's `saved=false`
+and deletion's `deleted=false` return `NOT_APPLIED`, never `SUCCEEDED`. That
+status doesn't prove rollback or make retry safe. A parse or transport failure
+after the one write attempt returns `UNKNOWN`. Neither result retries or
+automatically prepares a replacement. Basic-message text and upstream errors
+aren't surfaced.
+
+Document detail/list summaries include extraction status, not workflow counts.
+Suggestion summaries omit opaque matches. Structure suggestions include
+`current_values_complete`. It's advisory and false when any value was clipped,
+unsafe, URL-shaped or excluded by the nested 20-value cap. The acceptance and
+dismissal prepares each perform one bounded Casa read after operator gating.
+They check pending, unchanged and unresponded state and retain exact safe values
+as the server-side conflict input. Delete preparation similarly reads document
+detail once and requires an exact safe ID and nonblank name. It previews only
+allowlisted metadata. No read issues a local capability or token. No second
+read occurs at execution, and document deletion has no revision guard. State
+can change between preparation and execution. Every pending preview is charged for UTF-8
+bytes, plus retained body or file snapshot bytes. Oversized previews are
+rejected without displacing an upload reservation. A capacity rejection during
+preparation issues no token.
+`NOT_APPLIED` on `saved=false` or `deleted=false` doesn't prove rollback.
+Reconcile before any new attempt. Never automatically retry or prepare a replacement.
+The SDK's server-side conflict semantics remain unverified. Citations still
+require opt-in for excerpts. Signed URLs, file contents, filenames and owner
+metadata aren't exposed.
 
 No image upload IDs or attachments are accepted, because no tool can create those
 uploads. Not exposed: `create_package_pickup_item` (needs an official package-image

@@ -10,7 +10,7 @@ CONTENT_FIELDS = {
     "casa_prepare_create_todo_result": {"content"},
     "casa_prepare_answer_todo_question": {"other_text"},
     "casa_prepare_submit_todo_question_round": {"other_text"},
-    "casa_prepare_respond_to_document_structure_suggestion": {"expected_values"},
+    "casa_prepare_update_task": {"description"},
     "casa_prepare_update_todo": {"prepared_brief"},
     "casa_prepare_update_access_preferences": {
         "general_instructions",
@@ -21,6 +21,16 @@ CATALOG_SELECTION_FIELDS = {
     "casa_prepare_update_entity_make_model": frozenset(
         {"make_id", "make_name", "model_id", "model_name"}
     ),
+}
+NO_NULL_ACTION_FIELDS: dict[str, frozenset[str]] = {
+    "casa_prepare_update_request_detail": frozenset({"title", "read_state"}),
+    "casa_prepare_update_task": frozenset({"title", "description", "emoji"}),
+    "casa_prepare_update_story": frozenset({"name", "floor_number"}),
+}
+NONBLANK_ACTION_FIELDS: dict[str, frozenset[str]] = {
+    "casa_prepare_update_story": frozenset({"name"}),
+    "casa_prepare_update_request_detail": frozenset({"title"}),
+    "casa_prepare_update_task": frozenset({"title", "emoji"}),
 }
 
 PathId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,128}$", strict=True)]
@@ -105,13 +115,13 @@ class NotificationUpdate(InputModel):
 
 
 Notifications = Annotated[list[NotificationUpdate], Field(min_length=1, max_length=100)]
-ExpectedValues = Annotated[
-    list[Annotated[str, Field(max_length=10_000, strict=True)]], Field(max_length=100)
-]
 
 
 class SlotWindow(InputModel):
-    """Integer bounds as observed in the app codec. Units remain UNVERIFIED."""
+    """Integer bounds. One compiled editor uses Unix seconds, truncated toward zero.
+
+    This is static caller evidence. Server units and semantics remain UNVERIFIED.
+    """
 
     start_time: SlotBound
     end_time: SlotBound
@@ -146,6 +156,12 @@ class PropertyUpdate(InputModel):
 PropertyUpdates = Annotated[list[PropertyUpdate], Field(max_length=50)]
 
 
+NOT_APPLIED_WARNING = (
+    "Casa returned false. This doesn't prove rollback or that nothing changed. "
+    "Reconcile state before any new attempt. Never automatically retry."
+)
+
+
 CATALOG_REJECTION_WARNING = (
     "Rejection doesn't prove complete rollback. Reconcile inventory before any new retry. "
     "Never automatically retry or prepare a replacement."
@@ -154,7 +170,12 @@ CATALOG_REJECTION_WARNING = (
 
 class ActionResult(InputModel):
     outcome: Literal[
-        "SUCCEEDED", "UNKNOWN", "REJECTED_UNKNOWN_PRODUCT", "NOT_EXECUTED", "CANCELLED"
+        "SUCCEEDED",
+        "UNKNOWN",
+        "NOT_APPLIED",
+        "REJECTED_UNKNOWN_PRODUCT",
+        "NOT_EXECUTED",
+        "CANCELLED",
     ]
     operation: str
     home_id: str

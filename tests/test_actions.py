@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from action_fakes import FakeActions
+from casahome import CasaApi, is_unverified
 from casahome.models.ai import CasaAIMessagesResponse
 from mcp import Client
 from mcp.server.mcpserver.exceptions import ToolError
@@ -83,6 +84,8 @@ CASES: tuple[tuple[str, dict[str, object]], ...] = (
     ("create_todo_result", {"content": "Line one\nLine two"}),
     ("delete_todo", {"todo_id": "todo-one"}),
     ("update_entity_model", {"entity_id": ENTITY, "model_name": "New model"}),
+    ("add_mailbox_recipient", {"first_name": "Synthetic", "last_name": "Recipient"}),
+    ("update_mailbox_auto_archive", {"mailbox_auto_archive_days": 30}),
     (
         "respond_to_document_structure_suggestion",
         {
@@ -365,6 +368,9 @@ def test_source_write_allowlist_and_no_generic_http() -> None:
     assert {
         name for name in vars(CasaActionsProtocol) if not name.startswith("_")
     } == ACTION_METHODS
+    # A sibling SDK may expose provisional methods. None may reach this finite
+    # action protocol, even if new SDK methods are added or their markers change.
+    assert not {name for name in ACTION_METHODS if is_unverified(getattr(CasaApi, name))}
 
 
 async def test_manifest_exact_and_action_annotations() -> None:

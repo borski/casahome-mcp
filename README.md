@@ -132,7 +132,7 @@ authenticates and authorizes the account.
 
 ## Tools
 
-74 tools: the existing 57 read/local tools plus 15 action prepares, execute and cancel.
+76 tools: the existing 57 read/local tools plus 17 action prepares, execute and cancel.
 55 remote reads use 54 SDK methods. "Gated" read tools
 are disabled unless `CASA_ALLOW_UNVERIFIED_READS=true`. Gating comes from the
 SDK's evidence marker (`casahome.is_unverified`), so it changes automatically
@@ -253,6 +253,15 @@ They never perform a Casa write:
 | `casa_prepare_delete_todo` | Permanent deletion, no related-work cleanup |
 | `casa_prepare_update_entity_model` | Nonblank model name with empty props only |
 | `casa_prepare_respond_to_document_structure_suggestion` | Required `accepted` decision and exact `expected_values` |
+| `casa_prepare_add_mailbox_recipient` | Explicit first and last names only, each 1 to 256 characters. No business/kind/primary fields. |
+| `casa_prepare_update_mailbox_auto_archive` | Required `mailbox_auto_archive_days`, exactly integer `30` or explicit `null` only |
+
+Both mailbox prepares require ACTIONS only. Recipient previews preserve the exact
+first and last names and warn that adding a recipient may change account mail
+handling. Auto-archive previews preserve the nullable field exactly and warn that
+retention and disposal behavior is unverified. Neither `30` nor `null` guarantees
+no effect. Execution returns status only, never recipient names, kind or addresses.
+No other provisional SDK mail/package methods are exposed.
 
 1. Call the named prepare tool with explicit parameters.
 2. Show the user the exact preview, including its home, targets, full content and risks.

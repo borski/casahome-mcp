@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 CONTENT_FIELDS = {
     "casa_prepare_send_ai_message": {"text"},
@@ -18,6 +18,23 @@ Content = Annotated[str, Field(min_length=1, max_length=10_000, strict=True)]
 Token = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{43}$", strict=True)]
 StrictFlag = Annotated[bool, Field(strict=True)]
 Index = Annotated[int, Field(ge=0, le=10_000, strict=True)]
+RecipientName = Annotated[str, Field(min_length=1, max_length=256, strict=True)]
+
+
+def validate_mailbox_archive_days(value: object) -> Literal[30] | None:
+    # Literal's equality accepts 30.0. Require an actual JSON integer or null
+    # before the SDK/MCP validators can coerce or echo rejected input values.
+    if value is None:
+        return None
+    if type(value) is int and value == 30:
+        return 30
+    raise ValueError("Expected the observed integer or null.")
+
+
+MailboxArchiveDays = Annotated[
+    Literal[30] | None,
+    BeforeValidator(validate_mailbox_archive_days),
+]
 
 
 class InputModel(BaseModel):

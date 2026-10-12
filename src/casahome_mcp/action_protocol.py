@@ -7,6 +7,7 @@ from typing import Literal, Protocol
 from casahome.models.ai import CasaAIFeedbackResponse
 from casahome.models.documents import CreateDocumentResponse, SavedResponse
 from casahome.models.entity_publish import SaveAndPublishEntityResponse
+from casahome.models.mail_workflows import MailboxAutoArchiveResponse, MailboxRecipientResponse
 from casahome.models.preferences import NotificationSettingsResponse
 from casahome.models.read_todos import TodoDetailsResponse
 from casahome.models.todos import CreateTodoBody
@@ -27,6 +28,19 @@ from casahome.writes import SentCasaAIMessage
 
 
 class CasaActionsProtocol(Protocol):
+    async def add_mailbox_recipient(
+        self,
+        home_id: str,
+        *,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        business_name: str | None = None,
+    ) -> MailboxRecipientResponse: ...
+    async def update_mailbox_auto_archive(
+        self,
+        home_id: str,
+        mailbox_auto_archive_days: int | None,
+    ) -> MailboxAutoArchiveResponse: ...
     async def move_entity_to_room(
         self, home_id: str, entity_id: str, room_id: str
     ) -> BasicMessageResponse: ...

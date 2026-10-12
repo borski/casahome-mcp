@@ -8,6 +8,7 @@ from typing import Literal
 from casahome.models.ai import CasaAIFeedbackResponse, CasaAISendMessageResponse
 from casahome.models.documents import CreateDocumentResponse, SavedResponse
 from casahome.models.entity_publish import SaveAndPublishEntityResponse
+from casahome.models.mail_workflows import MailboxAutoArchiveResponse, MailboxRecipientResponse
 from casahome.models.preferences import NotificationSettingsResponse
 from casahome.models.read_todos import TodoDetailsResponse
 from casahome.models.todos import CreateTodoBody
@@ -45,6 +46,42 @@ class FakeActions(CasaActionsProtocol):
             await self.release.wait()
         if self.error is not None:
             raise self.error
+
+    async def add_mailbox_recipient(
+        self,
+        home_id: str,
+        *,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        business_name: str | None = None,
+    ) -> MailboxRecipientResponse:
+        await self.record("add_mailbox_recipient", home_id, first_name, last_name, business_name)
+        return MailboxRecipientResponse.model_validate(
+            {
+                "recipient": {
+                    "id": "recipient-one",
+                    "kind": SECRET,
+                    "first_name": SECRET,
+                    "last_name": SECRET,
+                    "address": {"line1": SECRET},
+                    "url": "https://example.invalid/" + SECRET,
+                }
+            }
+        )
+
+    async def update_mailbox_auto_archive(
+        self,
+        home_id: str,
+        mailbox_auto_archive_days: int | None,
+    ) -> MailboxAutoArchiveResponse:
+        await self.record("update_mailbox_auto_archive", home_id, mailbox_auto_archive_days)
+        return MailboxAutoArchiveResponse.model_validate(
+            {
+                "success": True,
+                "mailbox_auto_archive_days": mailbox_auto_archive_days,
+                "message": SECRET,
+            }
+        )
 
     async def move_entity_to_room(
         self,

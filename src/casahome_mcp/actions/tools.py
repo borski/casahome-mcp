@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated, Literal, TypeVar
 
 from casahome.models.entity_publish import EntityModelName, SaveAndPublishEntityRequest
+from casahome.models.mail_workflows import AddMailboxRecipientRequest, MailboxAutoArchiveRequest
 from casahome.models.verified_writes import (
     AnswerTodoQuestionRequest,
     CasaAIMessageInput,
@@ -38,8 +39,10 @@ from .models import (
     Answer,
     Content,
     ExpectedValues,
+    MailboxArchiveDays,
     Notifications,
     PathId,
+    RecipientName,
     RoundAnswers,
     StrictFlag,
     Token,
@@ -64,6 +67,8 @@ ACTION_METHODS = frozenset(
         "delete_todo",
         "update_entity_model",
         "respond_to_document_structure_suggestion",
+        "add_mailbox_recipient",
+        "update_mailbox_auto_archive",
     }
 )
 ACTION_TOOLS = frozenset(f"casa_prepare_{method}" for method in ACTION_METHODS) | {
@@ -285,6 +290,72 @@ def register_action_tools(server: MCPServer) -> dict[str, FuncMetadata]:
             return fn
 
         return register
+
+    @action_tool(
+        description=description(
+            "Add a mailbox recipient using explicit first and last names only. "
+            "No business name, kind or primary flags. May change account mail handling. "
+            "Requires ACTIONS only."
+        ),
+        annotations=PREPARE,
+        structured_output=True,
+    )
+    async def casa_prepare_add_mailbox_recipient(
+        first_name: RecipientName,
+        last_name: RecipientName,
+        ctx: Context[AppContext],
+        home_id: HomeId = None,
+    ) -> dict[str, JsonValue]:
+        body = AddMailboxRecipientRequest(first_name=first_name, last_name=last_name)
+
+        async def invoke(api: CasaActionsProtocol, home: str) -> ActionResult:
+            await api.add_mailbox_recipient(home, first_name=first_name, last_name=last_name)
+            return result(home, "add_mailbox_recipient")
+
+        return prepare(
+            ctx.request_context.lifespan_context,
+            home_id,
+            "add_mailbox_recipient",
+            {
+                **body.model_dump(mode="json", exclude_none=True),
+                "risk": "Adding a recipient may change account mail handling.",
+            },
+            invoke,
+        )
+
+    @action_tool(
+        description=description(
+            "Update mailbox auto-archive using only the observed 30 or explicit null. "
+            "Retention and disposal behavior is UNVERIFIED. Neither value guarantees no effect. "
+            "Requires ACTIONS only."
+        ),
+        annotations=PREPARE,
+        structured_output=True,
+    )
+    async def casa_prepare_update_mailbox_auto_archive(
+        mailbox_auto_archive_days: MailboxArchiveDays,
+        ctx: Context[AppContext],
+        home_id: HomeId = None,
+    ) -> dict[str, JsonValue]:
+        body = MailboxAutoArchiveRequest(mailbox_auto_archive_days=mailbox_auto_archive_days)
+
+        async def invoke(api: CasaActionsProtocol, home: str) -> ActionResult:
+            response = await api.update_mailbox_auto_archive(home, mailbox_auto_archive_days)
+            if not response.success:
+                raise ValueError("Unconfirmed action outcome")
+            return result(home, "update_mailbox_auto_archive")
+
+        return prepare(
+            ctx.request_context.lifespan_context,
+            home_id,
+            "update_mailbox_auto_archive",
+            {
+                **preview_body(body),
+                "risk": "Retention and disposal behavior is UNVERIFIED. "
+                "Neither 30 nor null guarantees no effect.",
+            },
+            invoke,
+        )
 
     @action_tool(
         description=description("Move an entity to a room, replacing its room."),
